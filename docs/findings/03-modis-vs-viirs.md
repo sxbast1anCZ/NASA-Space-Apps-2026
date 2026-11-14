@@ -9,7 +9,7 @@ Suomi-NPP as the VIIRS reference. This replaces the v0 note.
 | Decision | Value | Evidence |
 |---|---|---|
 | Units | VIIRS-equivalent hotspots | VIIRS is the sensor that continues |
-| Method | Factor per region and calendar month, shrunk towards the country-month factor | Lowest error of four candidates, in both countries, in leave-one-year-out and in the test years |
+| Method | Factor per region, calendar month and pass (day or night), shrunk towards the factor of the country, month and pass | Region and month beat three other candidates; splitting the passes then lowered the error in 6 of 8 comparisons (one tie, one worse) |
 | Calibration window | 2012-2021 | MODIS orbits drift from 2022 (block 0) |
 | NOAA-20 from November 2026 | No factor | NOAA-20 / Suomi-NPP is between 0.93 and 1.03 every year, 2019-2025 |
 | Second metric | Fire-days (0.25° cell × day with fire) | Its VIIRS / MODIS ratio is lower and steadier: 1.9 to 2.2 |
@@ -21,13 +21,14 @@ Suomi-NPP as the VIIRS reference. This replaces the v0 note.
 - `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,089,832 rows, 3 MB. The harmonized
   count of any area and period is the **sum of `hotspots_harmonized`**. A cell that crosses a region
   border has one row per region: always sum, never count rows.
-- `factors.csv`: the 477 region-month factors (1.6 to 8.5, median 3.5).
+- `factors.csv`: the 949 factors per region, month and pass. Day pass: 1.3 to 8.2, median 3.0.
+  Night pass: 3.6 to 14.4, median 6.9 (Argentina) and 8.2 (Chile).
 - `validation_yearly.csv`.
 
 One sensor per period, so nothing is counted twice: MODIS before 2012-02-01, Suomi-NPP until
 2026-10-31, NOAA-20 after. Factor: `(V + 200 × country_factor) / (M + 200)`, with V and M the
-Suomi-NPP and MODIS counts of the region and month in 2012-2021. Hotspots without a region use the
-country-month factor. Before 2002-07-04 (no Aqua) a second set of factors, fitted on Terra rows, applies.
+Suomi-NPP and MODIS counts of the region, month and pass in 2012-2021. Hotspots without a region use
+the country factor of their month and pass. Before 2002-07-04 (no Aqua) a second set of factors, fitted on Terra rows, applies.
 
 ![Before and after harmonization](03-harmonization.png)
 
@@ -55,13 +56,28 @@ WAPE = sum of absolute errors / sum of VIIRS over region-months (lower is better
 | **Region and month, shrunk** | **14.6%** | **24.6%** | **20.5%** | **27.4%** |
 | Power law per region | 16.8% | 27.9% | 24.3% | 30.0% |
 
-Error of the yearly total with the chosen method:
+### Splitting the passes
 
-| Set | Argentina | Chile |
-|---|---|---|
-| Leave-one-year-out 2012-2021, mean | 4.1% | 9.1% |
-| Leave-one-year-out 2012-2021, worst year | 8.8% | 17.1% |
-| Test 2022-2025, mean | 7.4% | 22.4% |
+Same region and month method, with a different MODIS input. `per pass` predicts day and night
+separately, each from its own MODIS count, and adds them.
+
+| Variant | Argentina, leave-one-year-out | Chile, leave-one-year-out | Argentina, test 2022-2025 | Chile, test 2022-2025 |
+|---|---|---|---|---|
+| All MODIS (region and month, above) | 14.6% | 24.6% | 20.5% | 27.4% |
+| MODIS day pass only | 17.5% | 29.9% | 24.5% | 34.7% |
+| Aqua only | 15.5% | 26.7% | 22.1% | 30.3% |
+| **Per pass** | **13.7%** | 24.7% | **19.7%** | 30.9% |
+
+Mean error of the yearly total:
+
+| Variant | Argentina, leave-one-year-out | Chile, leave-one-year-out | Argentina, test 2022-2025 | Chile, test 2022-2025 |
+|---|---|---|---|---|
+| All MODIS | 4.1% | 9.1% | 7.4% | 22.4% |
+| **Per pass** | **3.2%** | **7.2%** | **6.3%** | **20.5%** |
+
+Per pass is the method in `scripts/harmonize.py`. It is better on every yearly total and on the
+region-month error in Argentina, which has about 91% of the hotspots. It ties in Chile in
+leave-one-year-out and is worse in Chile in the test years (30.9% against 27.4%).
 
 ## How far the factors can be trusted before 2012
 
@@ -71,10 +87,10 @@ years we can check.
 
 ## Limits to state in the app and the pitch
 
-- A harmonized MODIS-era count is an estimate. Per year and country it is within about 4% (Argentina)
-  and 9% (Chile) on average. Per region and month the typical error is 15% (Argentina) and 25% (Chile).
+- A harmonized MODIS-era count is an estimate. Per year and country it is within about 3% (Argentina)
+  and 7% (Chile) on average. Per region and month the typical error is 14% (Argentina) and 25% (Chile).
 - Chile is harder: fewer hotspots, and the test years include the drift and the 2022-2023 megafires.
-- 2022 is underestimated by 15% when predicted from MODIS. It does not affect the series, which uses
+- 2022 is underestimated by 13.5% when predicted from MODIS. It does not affect the series, which uses
   VIIRS in that year, but it shows that extreme seasons stretch the method.
 - Before July 2002 only Terra observed. Those factors are large (often above 7) and noisy:
   2000-2002 is the least reliable part of the series.
@@ -83,6 +99,5 @@ years we can check.
 
 ## Not done from block 3
 
-Matching of near-simultaneous detections (3.5), FRP analysis (3.6), event clustering (3.7),
-quantile mapping, and a separate factor per pass. The per-pass ratios suggest the last one is the
-next thing to try if time allows.
+Matching of near-simultaneous detections (3.5), FRP analysis (3.6), event clustering (3.7) and
+quantile mapping.

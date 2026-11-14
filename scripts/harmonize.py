@@ -10,8 +10,9 @@ One sensor per period, so nothing is counted twice:
     burn_date >= 2026-11-01   VIIRS NOAA-20, unchanged (Suomi-NPP stopped on 2026-11-02)
 
 Method (chosen in block 3, docs/findings/03-modis-vs-viirs.md): factor = Suomi-NPP count / MODIS
-count over the calibration years, per region and calendar month, shrunk towards the factor of the
-country and month: (V + K * country_factor) / (M + K). Rows without a region use the country factor.
+count over the calibration years, per region, calendar month and pass (day or night), shrunk
+towards the factor of the country, month and pass: (V + K * country_factor) / (M + K). Rows without
+a region use the country factor. The passes are separate because MODIS misses most night fires.
 A second set of factors uses Terra rows only, for the period before Aqua.
 NOAA-20 needs no factor: its counts are within 7% of Suomi-NPP every year from 2019 to 2025.
 """
@@ -52,26 +53,27 @@ def main() -> None:
                 count(*) FILTER (WHERE satellite = 'Terra') AS terra"""
     con.execute(f"""
         CREATE TABLE country_factors AS
-        SELECT country, burn_month, viirs / modis AS cf_terra_aqua, viirs / terra AS cf_terra_only
-        FROM (SELECT country, burn_month, {counts} FROM h WHERE {overlap} GROUP BY ALL)
+        SELECT country, burn_month, pass_slot,
+               viirs / nullif(modis, 0) AS cf_terra_aqua, viirs / nullif(terra, 0) AS cf_terra_only
+        FROM (SELECT country, burn_month, pass_slot, {counts} FROM h WHERE {overlap} GROUP BY ALL)
     """)
     con.execute(f"""
         CREATE TABLE factors AS
-        SELECT country, admin1, burn_month, viirs, modis, terra,
+        SELECT country, admin1, burn_month, pass_slot, viirs, modis, terra,
                (viirs + {SHRINK_K} * cf_terra_aqua) / (modis + {SHRINK_K}) AS factor_terra_aqua,
                (viirs + {SHRINK_K} * cf_terra_only) / (terra + {SHRINK_K}) AS factor_terra_only
-        FROM (SELECT country, admin1, burn_month, {counts} FROM h
+        FROM (SELECT country, admin1, burn_month, pass_slot, {counts} FROM h
               WHERE {overlap} AND admin1 IS NOT NULL GROUP BY ALL)
-        JOIN country_factors USING (country, burn_month)
+        JOIN country_factors USING (country, burn_month, pass_slot)
         ORDER BY ALL
     """)
-    # One factor per hotspot: its region and month if known, otherwise its country and month.
+    # One factor per hotspot: its region, month and pass if known, otherwise its country, month and pass.
     con.execute("""
         CREATE VIEW hf AS
         SELECT h.*, coalesce(f.factor_terra_aqua, c.cf_terra_aqua) AS factor_terra_aqua,
                coalesce(f.factor_terra_only, c.cf_terra_only) AS factor_terra_only
-        FROM h JOIN country_factors c USING (country, burn_month)
-        LEFT JOIN factors f USING (country, admin1, burn_month)
+        FROM h LEFT JOIN country_factors c USING (country, burn_month, pass_slot)
+        LEFT JOIN factors f USING (country, admin1, burn_month, pass_slot)
     """)
 
     con.execute(f"""
@@ -111,12 +113,15 @@ def main() -> None:
         FROM cells
     """).fetchone()
     assert viirs_raw == viirs_harm, "VIIRS counts must not change"
-    assert con.execute("SELECT count(*) FROM cells WHERE hotspots_harmonized IS NULL").fetchone()[0] == 0
+    missing = con.execute("""
+        SELECT count(*) FROM cells WHERE hotspots_harmonized IS NULL OR NOT isfinite(hotspots_harmonized)
+    """).fetchone()[0]
+    assert missing == 0, f"{missing} cell-days have MODIS hotspots without a factor"
 
     print(con.execute("""
-        SELECT country, count(*) AS region_months, round(min(factor_terra_aqua), 2) AS min,
+        SELECT country, pass_slot, count(*) AS region_months, round(min(factor_terra_aqua), 2) AS min,
                round(median(factor_terra_aqua), 2) AS median, round(max(factor_terra_aqua), 2) AS max
-        FROM factors GROUP BY 1 ORDER BY 1
+        FROM factors GROUP BY ALL ORDER BY ALL
     """).df().to_string(index=False))
     print(f"\n{con.execute('SELECT count(*) FROM cells').fetchone()[0]:,} cell-day rows "
           f"| raw {raw:,.0f} -> harmonized {harm:,.0f} hotspots")
