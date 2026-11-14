@@ -114,6 +114,9 @@ These are suggestions **(inference)**, not decisions.
 1. **The 1.35 level difference before 2012.** Harmonize Terra-only and Aqua-only separately for
    2003-2011 and see whether they agree; test the sensitivity of the level to the shrinkage constant
    (200) and to the calibration window; repeat with fire-days, whose ratio is steadier.
+   **Done in `docs/findings/03b-pre2012-level.md`:** the difference is already in raw MODIS, is the same
+   for Terra and Aqua, holds for every window and `K >= 50`, and 65% of it is in Salta and Santiago del
+   Estero (July to November).
 2. **Match near-simultaneous Aqua and Suomi-NPP detections** (block 3.5) to separate pixel size from
    sensitivity, especially at night.
 3. **Test the scan angle** as a covariate of the ratio, as block 1 planned.

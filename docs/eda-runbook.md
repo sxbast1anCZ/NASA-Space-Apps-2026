@@ -92,6 +92,7 @@ jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/00_time_au
 | `00_time_audit.ipynb` | 5 | 4 s | |
 | `01_quality.ipynb` | 5 | 3 min | The quality files (it is pipeline step 6) |
 | `03_modis_vs_viirs.ipynb` | 7 | 15 s | |
+| `03b_pre2012_level.ipynb` | 7 | 2 min | `docs/findings/03b-pre2012-level.png` |
 | `04_calendar.ipynb` | 6 | 30 s | `processed/calendar/monthly_by_region.parquet` |
 | `06_case_studies.ipynb` | 7 | 5 s | `docs/findings/06-valparaiso-2024.png` |
 
