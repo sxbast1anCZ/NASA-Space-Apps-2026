@@ -20,6 +20,9 @@ Outputs (NASA_Data_Sources/processed/risk/):
 
 Every feature is known before the week starts:
     baseline_probability     history of the cell for that week, earlier years only
+
+Cells in year Y: only those with a reference detection before Y (scripts/risk_baseline.py), so
+the panel does not leak which cells burn later.
     fire_prev_1w / _4w       fire in the cell in the previous 1 and 4 weeks
     nbr_fire_prev_1w         neighbouring cells (8) with fire in the previous week
     week_sin, week_cos       season
@@ -41,8 +44,8 @@ import numpy as np
 import pandas as pd
 
 from risk_baseline import (
-    CELL_DEG, HOTSPOTS, N_WEEKS, OUT, baseline_for_year, build_panel, evaluate, load_detections,
-    observed_weeks, select_target_rows, week_end, week_start,
+    CELL_DEG, HOTSPOTS, N_WEEKS, OUT, baseline_for_year, build_panel, eligible_cells, evaluate,
+    load_detections, observed_weeks, select_target_rows, week_end, week_start,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -114,19 +117,21 @@ def assemble(years, cells, fire, avail, hist, last_day, horizon_end, args) -> pd
         if i < args.min_years:
             continue
         base = baseline_for_year(fire, avail, i, args.window, args.shrink)
+        keep = eligible_cells(fire, avail, i)  # cells with history before this year only
+        ids = np.flatnonzero(keep)
         for w in range(N_WEEKS):
             s, e = week_start(yr, w), week_end(yr, w)
             is_obs = bool(avail[i, w])
             if not is_obs and not (e > last_day and s <= horizon_end):
                 continue
             frames.append(pd.DataFrame({
-                "cell_id": np.arange(len(cells)), "year": yr, "week": w,
+                "cell_id": ids, "year": yr, "week": w,
                 "week_start": s.date(),
-                "observed": fire[:, i, w].astype("float32") if is_obs else np.nan,
-                "baseline_probability": base[:, w].astype("float32"),
-                "fire_prev_1w": hist["fire_prev_1w"][:, i, w],
-                "fire_prev_4w": hist["fire_prev_4w"][:, i, w],
-                "nbr_fire_prev_1w": hist["nbr_fire_prev_1w"][:, i, w],
+                "observed": fire[ids, i, w].astype("float32") if is_obs else np.nan,
+                "baseline_probability": base[ids, w].astype("float32"),
+                "fire_prev_1w": hist["fire_prev_1w"][ids, i, w],
+                "fire_prev_4w": hist["fire_prev_4w"][ids, i, w],
+                "nbr_fire_prev_1w": hist["nbr_fire_prev_1w"][ids, i, w],
                 # The model forecasts the week in progress only: later weeks have no weather yet.
                 "model_ok": is_obs or (s <= last_day < e),
             }))
@@ -159,11 +164,10 @@ def main() -> None:
     df = load_detections(args.hotspots, drop_low=False)
     df["cell_lat"] = np.floor(df["latitude"] / CELL_DEG) * CELL_DEG
     df["cell_lon"] = np.floor(df["longitude"] / CELL_DEG) * CELL_DEG
-    rows, first_day, _ = select_target_rows(df, "reference")
-    last_day = df["burn_date"].max() - pd.Timedelta(days=1)
+    rows, first_day, _, last_day = select_target_rows(df, "reference")
     horizon_end = last_day + pd.Timedelta(days=7 * args.horizon_weeks)
     years = np.arange(first_day.year, horizon_end.year + 1)
-    cells = (rows[["cell_lat", "cell_lon"]].drop_duplicates()
+    cells = (df[["cell_lat", "cell_lon"]].drop_duplicates()
              .sort_values(["cell_lat", "cell_lon"]).reset_index(drop=True))
     cells.index.name = "cell_id"
     fire = build_panel(rows, years, cells)
