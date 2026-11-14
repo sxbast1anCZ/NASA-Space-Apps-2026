@@ -18,7 +18,8 @@ Suomi-NPP as the VIIRS reference. This replaces the v0 note.
 
 `python scripts/harmonize.py` (about one second) writes, in `NASA_Data_Sources/processed/harmonized/`:
 
-- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,089,832 rows, 3 MB. The harmonized
+- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,089,694 rows, 3 MB. Easter Island and
+  Malvinas/Falklands are left out (each appears in only one of the two download sources). The harmonized
   count of any area and period is the **sum of `hotspots_harmonized`**. A cell that crosses a region
   border has one row per region: always sum, never count rows.
 - `factors.csv`: the 949 factors per region, month and pass. Day pass: 1.3 to 8.2, median 3.0.

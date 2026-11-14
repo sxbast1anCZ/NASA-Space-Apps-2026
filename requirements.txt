@@ -7,3 +7,6 @@ tzdata>=2025.2
 pytest>=8
 duckdb>=1.0
 jupyter
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx

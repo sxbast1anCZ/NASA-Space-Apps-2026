@@ -34,7 +34,10 @@ AQUA_START = "2002-07-04"
 CELL = 4                           # cells per degree: 0.25°
 SHRINK_K = 200                     # MODIS detections behind the country prior
 # Vegetation fires only. NRT rows have no fire_type yet, so they are kept.
-FILTER = "(fire_type = 0 OR fire_type IS NULL)"
+# Easter Island and Malvinas/Falklands are outside the analysis (docs/eda-plan.md): each appears
+# in only one of the two download sources. Same rule as scripts/risk_baseline.py.
+FILTER = ("(fire_type = 0 OR fire_type IS NULL) AND longitude >= -100 "
+          "AND NOT (longitude > -62 AND latitude < -50)")
 
 
 def main() -> None:

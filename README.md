@@ -102,3 +102,20 @@ Things to know:
   disagreements with FIRMS. Points outside both polygons (10,476, mostly coastal) keep FIRMS' country and get
   no `admin1`.
 - Credit both sources in the web app.
+
+## Running the web app
+
+The app needs the hotspot table and the harmonized dataset (`python scripts/build_hotspots.py`, then
+`python scripts/harmonize.py`).
+
+```bash
+pip install -r requirements.txt
+cd frontend && npm install && npm run build && cd ..
+uvicorn backend.main:app --port 8000
+```
+
+Open http://localhost:8000. The API serves the built web app.
+
+For development, run the API with `uvicorn backend.main:app --reload` and the web app with
+`npm run dev` inside `frontend/` (it proxies `/api` to port 8000). API docs: http://localhost:8000/docs.
+Tests: `pytest`.
