@@ -124,3 +124,18 @@ Open http://localhost:8000. The API serves the built web app.
 For development, run the API with `uvicorn backend.main:app --reload` and the web app with
 `npm run dev` inside `frontend/` (it proxies `/api` to port 8000). API docs: http://localhost:8000/docs.
 Tests: `pytest`.
+
+## Risk layer (optional)
+
+Probability of fire activity per 0.25° cell and week. Needs the hotspot table and the quality flags.
+
+```bash
+python scripts/risk_baseline.py             # historical rate per cell and week, about 3 seconds
+python scripts/risk_model.py --no-weather   # LightGBM model on top of it, about 10 seconds
+```
+
+Both write `NASA_Data_Sources/processed/risk/cells_weekly.parquet` (contract C3); the model keeps the
+baseline wherever it was not tested out of sample. On macOS, LightGBM also needs `brew install libomp`.
+
+Weather features are optional: `python scripts/risk_weather.py` downloads NASA POWER daily data for
+1,466 points (about 2 hours, resumable), then run `python scripts/risk_model.py` without `--no-weather`.
