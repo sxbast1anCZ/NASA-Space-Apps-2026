@@ -1,7 +1,7 @@
 """Risk model: probability of fire activity per 0.25 degree cell and week (block 8, module M5).
 
 A LightGBM classifier on top of the baseline (scripts/risk_baseline.py). It must beat the baseline
-on later years it never saw; if it does not, the app keeps the baseline (docs/work-split.md).
+on later years it never saw; if it does not, the app keeps the baseline (docs/findings/08-risk-model.md).
 
 Inputs:
     NASA_Data_Sources/processed/hotspots/                    target and fire history (VIIRS)

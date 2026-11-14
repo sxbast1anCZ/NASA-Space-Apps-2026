@@ -9,7 +9,7 @@ files.
 
 ## 1. The project in six lines
 
-- NASA Space Apps 2026, challenge "Harmonization of MODIS and VIIRS Hot Spots". Brief: `challenge-brief.es.md`.
+- NASA Space Apps 2026, challenge "Harmonization of MODIS and VIIRS Hot Spots". What it asks: `docs/challenge-requirements.md`.
 - Scope: Chile and Argentina, November 2000 to today.
 - **Base case (what NASA asks):** one comparable series of fire hotspots from two sensors, shown in a
   web app as a burn calendar per area and period. It works on `main`.
@@ -27,7 +27,9 @@ files.
 | Every decision taken, in one list | `docs/eda-findings.md` |
 | Results per block | `docs/findings/NN-*.md` (blocks 0 to 8, plus `03b` and the summary) |
 | Loose ends with their reasons | `docs/eda-closing-plan.md` |
-| Pull request rules and file ownership | `docs/work-split.md`, `CONTRIBUTING.md` |
+| Pull request rules | `CONTRIBUTING.md` |
+| Columns of the files that pass between modules | `docs/data-contracts.md` |
+| What the EDA settles before training a prediction model | `docs/eda-conclusions-for-modeling.md` |
 | The web app | `backend/main.py` (FastAPI + DuckDB), `frontend/src/` (React + Vite + Leaflet + ECharts) |
 | The pipeline | `scripts/build_hotspots.py`, `scripts/harmonize.py`, `scripts/risk_baseline.py`, `scripts/risk_model.py`, `scripts/risk_weather.py` |
 | Tests | `tests/` (57 pass on `main`) |
@@ -40,7 +42,7 @@ runbook (about 50 minutes and a FIRMS key), or receives the folder from a teamma
 | `hotspots/` | Every hotspot, both sensors, with time fields. 8,042,380 rows |
 | `quality/quality_flags.parquet` | One row per hotspot with `keep` (quality filter of block 1) |
 | `harmonized/hotspots_kept.parquet` | The hotspots that pass the filter. 7,000,520 rows. **Start here for any analysis** |
-| `harmonized/cells_daily.parquet` | Harmonized hotspots per 0.25° cell and day. Sum `hotspots_harmonized`; never count rows |
+| `harmonized/cells_daily.parquet` | Harmonized hotspots per 0.25° cell and day (1,026,554 rows). Sum `hotspots_harmonized`; never count rows |
 | `risk/cells_weekly.parquet` | Probability of fire activity per cell and week |
 | `spatial/cell_regimes.parquet`, `population/cells.parquet` | Fire regime and people per cell |
 
@@ -75,9 +77,9 @@ lane at a time.
 | Task | Lane | Effort | Priority |
 |---|---|---|---|
 | T1 Merge pull request 21 | docs | 20 min | high |
-| T2 Fill the Suomi-NPP outages | scripts | 45 min | high |
+| T2 Fill the Suomi-NPP outages | scripts | done | merged, pull request 23 |
 | T3 One anomaly definition in the app | app | 1 h | high |
-| T4 Make notebook 06 run on every machine | notebooks | 10 min | high |
+| T4 Make notebook 06 run on every machine | notebooks | done | merged, pull request 22 |
 | T5 Tests for the risk scripts | scripts | 45 min | medium |
 | T6 Re-run block 4 on harmonized data, fix notebooks 01 and 04 | notebooks | 1.25 h | medium |
 | T7 Population and fire regime in the app | app | 1 h | medium |
@@ -115,7 +117,7 @@ be done now.
   0); VIIRS counts outside outage days are unchanged; `docs/findings/03-modis-vs-viirs.md`, the
   runbook's expected numbers and `docs/eda-findings.md` are updated; `pytest` passes.
 - **Do not:** touch the factors. The calibration years 2012-2021 contain no Suomi-NPP outage.
-- **After merging:** everyone re-runs `python scripts/harmonize.py`, then the risk scripts.
+- **Done** in pull request 23: 39 outage days filled with 17,318 NOAA-20 hotspots; `cells_daily.parquet` has 1,026,554 rows. Everyone re-runs `python scripts/harmonize.py`. The risk scripts build their own series and do not change.
 
 ### T3. One anomaly definition in the app (app)
 
@@ -141,7 +143,8 @@ be done now.
 
 - **Problem:** `notebooks/06_case_studies.ipynb` fails on some machines with duckdb 2.0.0:
   `date_trunc('hour', acq_datetime)` on a nanosecond `TIMESTAMPTZ`.
-- **Fix:** in the "pass by pass" query, group by `date_trunc('hour', acq_datetime::TIMESTAMP)`.
+- **Done** in pull request 22 with `date_trunc('hour', acq_datetime::TIMESTAMPTZ::TIMESTAMP)`. A plain `::TIMESTAMP` cast fails on nanosecond columns; do not shorten it.
+- **Fix that was asked:** in the "pass by pass" query, group by the hour of `acq_datetime` after a cast.
   Re-run the notebook; its tables must not change.
 - **Done when:** it runs on a machine where it failed, and on one where it did not.
 

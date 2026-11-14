@@ -1,4 +1,4 @@
-"""Build the harmonized dataset (contract C2 in docs/work-split.md) from the hotspot table.
+"""Build the harmonized dataset (contract C2 in docs/data-contracts.md) from the hotspot table.
 
 Inputs: the hotspot table (scripts/build_hotspots.py) and the quality flags of block 1
 (NASA_Data_Sources/processed/quality/quality_flags.parquet, written by notebooks/01_quality.ipynb).

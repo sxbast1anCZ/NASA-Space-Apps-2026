@@ -5,7 +5,8 @@ Python 3.12 on macOS. Every command here was run on `main` that day, except note
 run by its author (it needs the WorldPop rasters).
 
 Read this before `docs/eda-plan.md` (the plan) and `docs/findings/` (the results). Every decision in
-one list: `docs/eda-findings.md`. Loose ends and how to close them: `docs/eda-closing-plan.md`. The "Project
+one list: `docs/eda-findings.md`. Loose ends and how to close them: `docs/eda-closing-plan.md`.
+Before training a prediction model: `docs/eda-conclusions-for-modeling.md`. The "Project
 status" part of `CLAUDE.md` is older than this file: where they disagree, this file is right.
 
 ## Where the EDA stands
@@ -159,7 +160,7 @@ df = con.execute("""
 | Partial periods | Last complete `burn_date`: 2026-11-12. Compare the current month with the same days (1 to N) of other years. | Blocks 0 and 4 |
 | Provisional data | `processing = 'NRT'`: August 2026 onward for VIIRS, September 2026 onward for MODIS | Block 1 |
 | Trends | No trend claim: the sign depends on the window | Block 4 |
-| Risk wording | Probability of fire activity per cell and week. Never "predicts where a fire will start". | `docs/work-split.md` |
+| Risk wording | Probability of fire activity per cell and week. Never "predicts where a fire will start". | `docs/data-contracts.md` |
 
 Two points where the documents disagree and nobody has decided:
 
@@ -180,7 +181,7 @@ Two points where the documents disagree and nobody has decided:
 7. Open a pull request. In the description: what changed, how it was checked, and every decision
    that affects another module. Wait for the audit comment before merging.
 
-File ownership, contracts between modules and pull request rules: `docs/work-split.md`.
+Columns of the files that pass between modules: `docs/data-contracts.md`. Pull request rules: `CONTRIBUTING.md`.
 
 ## Web app
 

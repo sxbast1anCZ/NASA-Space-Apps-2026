@@ -23,7 +23,7 @@ Run `notebooks/01_quality.ipynb` once to create the quality flags, then `python 
 - `hotspots_kept.parquet`: the 7,000,520 hotspots that pass the filter, one row each (152 MB). The
   CSV download of the web app and notebook 03 read this file, so the filter, its checks and the
   region names live in one place.
-- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,026,554 rows, 3 MB. The harmonized
+- `cells_daily.parquet` (contract C2 in `docs/data-contracts.md`): 1,026,554 rows, 3 MB. The harmonized
   count of any area and period is the **sum of `hotspots_harmonized`**. A cell that crosses a region
   border has one row per region: always sum, never count rows.
 - `factors.csv`: the 949 factors per region, month and pass. Day pass: 0.9 to 4.1, median 2.8
