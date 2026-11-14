@@ -1,6 +1,13 @@
 """Build the harmonized dataset (contract C2 in docs/work-split.md) from the hotspot table.
 
+Inputs: the hotspot table (scripts/build_hotspots.py) and the quality flags of block 1
+(NASA_Data_Sources/processed/quality/quality_flags.parquet, written by notebooks/01_quality.ipynb).
+Only rows with `keep` are used: no low confidence, no static sources, no volcano or offshore rows,
+no Easter Island or Malvinas/Falklands (docs/findings/01-quality.md). Calibrating on the filtered
+rows matters: the filter removes more VIIRS than MODIS.
+
 Output: NASA_Data_Sources/processed/harmonized/
+    hotspots_kept.parquet the hotspots that pass the filter, one row each, region corrected
     cells_daily.parquet   one row per 0.25° cell, burn_date, region and sensor with fire
     factors.csv           the MODIS -> VIIRS-equivalent factors that were applied
 
@@ -10,8 +17,9 @@ One sensor per period, so nothing is counted twice:
     burn_date >= 2026-11-01   VIIRS NOAA-20, unchanged (Suomi-NPP stopped on 2026-11-02)
 
 Method (chosen in block 3, docs/findings/03-modis-vs-viirs.md): factor = Suomi-NPP count / MODIS
-count over the calibration years, per region and calendar month, shrunk towards the factor of the
-country and month: (V + K * country_factor) / (M + K). Rows without a region use the country factor.
+count over the calibration years, per region, calendar month and pass (day or night), shrunk
+towards the factor of the country, month and pass: (V + K * country_factor) / (M + K). Rows without
+a region use the country factor. The passes are separate because MODIS misses most night fires.
 A second set of factors uses Terra rows only, for the period before Aqua.
 NOAA-20 needs no factor: its counts are within 7% of Suomi-NPP every year from 2019 to 2025.
 """
@@ -22,8 +30,11 @@ from pathlib import Path
 
 import duckdb
 
+from build_hotspots import fix_mojibake
+
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "NASA_Data_Sources" / "processed" / "hotspots"
+FLAGS = ROOT / "NASA_Data_Sources" / "processed" / "quality" / "quality_flags.parquet"
 OUT = ROOT / "NASA_Data_Sources" / "processed" / "harmonized"
 
 CALIBRATION_YEARS = (2012, 2021)   # stable MODIS orbits; Suomi-NPP complete from February 2012
@@ -32,16 +43,59 @@ NOAA20_START = "2026-11-01"
 AQUA_START = "2002-07-04"
 CELL = 4                           # cells per degree: 0.25°
 SHRINK_K = 200                     # MODIS detections behind the country prior
-# Vegetation fires only. NRT rows have no fire_type yet, so they are kept.
-FILTER = "(fire_type = 0 OR fire_type IS NULL)"
+KEY = "satellite, acq_datetime, latitude, longitude"  # unique per hotspot, shared with the flags
+
+
+def build_kept(con: duckdb.DuckDBPyConnection, table: str, flags: Path, out: Path) -> int:
+    """Write the hotspots that pass the quality filter, with the region corrected, to `out`.
+
+    Every consumer (the harmonization, the CSV of the web app, notebook 03) reads this file, so the
+    filter, the checks and the region names live in one place.
+
+    Region: rows the polygons missed take `admin1_fixed` (nearest region within 5 km, block 1.8),
+    but only when its name, with the encoding repaired as in build_hotspots.py, is a region of the
+    row's own country. Otherwise the row stays without region.
+    """
+    if not flags.exists():
+        raise SystemExit(f"{flags} not found. Run notebooks/01_quality.ipynb to create it.")
+    unflagged = con.execute(f"""
+        SELECT count(*) FROM {table} t ANTI JOIN read_parquet('{flags}') q USING ({KEY})
+    """).fetchone()[0]
+    if unflagged:
+        raise SystemExit(f"{unflagged:,} hotspots have no quality flag: the flags are older than the "
+                         "table. Re-run notebooks/01_quality.ipynb.")
+    names = con.execute(f"""
+        SELECT DISTINCT admin1_fixed FROM read_parquet('{flags}') WHERE admin1_fixed IS NOT NULL
+    """).fetchall()
+    con.execute("CREATE OR REPLACE TABLE region_names (raw VARCHAR, name VARCHAR)")
+    if names:
+        con.executemany("INSERT INTO region_names VALUES (?, ?)", [(n, fix_mojibake(n)) for (n,) in names])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"""
+        COPY (
+            WITH pairs AS (SELECT DISTINCT country, admin1 FROM {table} WHERE admin1 IS NOT NULL)
+            SELECT t.* REPLACE (coalesce(t.admin1, p.admin1) AS admin1)
+            FROM {table} t JOIN read_parquet('{flags}') q USING ({KEY})
+            LEFT JOIN region_names n ON n.raw = q.admin1_fixed
+            LEFT JOIN pairs p ON p.country = t.country AND p.admin1 = n.name
+            WHERE q.keep
+        ) TO '{out}' (FORMAT parquet, COMPRESSION zstd)
+    """)
+    return con.execute(f"SELECT count(*) FROM read_parquet('{out}')").fetchone()[0]
 
 
 def main() -> None:
     con = duckdb.connect()
     con.execute("SET TimeZone='UTC'")
+    table = f"read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)"
+    OUT.mkdir(parents=True, exist_ok=True)
+    n_kept = build_kept(con, table, FLAGS, OUT / "hotspots_kept.parquet")
+    print(f"{n_kept:,} hotspots pass the quality filter")
     con.execute(f"""
-        CREATE VIEW h AS SELECT * FROM read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)
-        WHERE {FILTER}
+        CREATE TABLE h AS
+        SELECT burn_date, burn_year, burn_month, pass_slot, latitude, longitude, country, admin1,
+               instrument, satellite, processing
+        FROM read_parquet('{OUT}/hotspots_kept.parquet')
     """)
 
     # Factors on the months where both sensors observed.
@@ -52,26 +106,27 @@ def main() -> None:
                 count(*) FILTER (WHERE satellite = 'Terra') AS terra"""
     con.execute(f"""
         CREATE TABLE country_factors AS
-        SELECT country, burn_month, viirs / modis AS cf_terra_aqua, viirs / terra AS cf_terra_only
-        FROM (SELECT country, burn_month, {counts} FROM h WHERE {overlap} GROUP BY ALL)
+        SELECT country, burn_month, pass_slot,
+               viirs / nullif(modis, 0) AS cf_terra_aqua, viirs / nullif(terra, 0) AS cf_terra_only
+        FROM (SELECT country, burn_month, pass_slot, {counts} FROM h WHERE {overlap} GROUP BY ALL)
     """)
     con.execute(f"""
         CREATE TABLE factors AS
-        SELECT country, admin1, burn_month, viirs, modis, terra,
+        SELECT country, admin1, burn_month, pass_slot, viirs, modis, terra,
                (viirs + {SHRINK_K} * cf_terra_aqua) / (modis + {SHRINK_K}) AS factor_terra_aqua,
                (viirs + {SHRINK_K} * cf_terra_only) / (terra + {SHRINK_K}) AS factor_terra_only
-        FROM (SELECT country, admin1, burn_month, {counts} FROM h
+        FROM (SELECT country, admin1, burn_month, pass_slot, {counts} FROM h
               WHERE {overlap} AND admin1 IS NOT NULL GROUP BY ALL)
-        JOIN country_factors USING (country, burn_month)
+        JOIN country_factors USING (country, burn_month, pass_slot)
         ORDER BY ALL
     """)
-    # One factor per hotspot: its region and month if known, otherwise its country and month.
+    # One factor per hotspot: its region, month and pass if known, otherwise its country, month and pass.
     con.execute("""
         CREATE VIEW hf AS
         SELECT h.*, coalesce(f.factor_terra_aqua, c.cf_terra_aqua) AS factor_terra_aqua,
                coalesce(f.factor_terra_only, c.cf_terra_only) AS factor_terra_only
-        FROM h JOIN country_factors c USING (country, burn_month)
-        LEFT JOIN factors f USING (country, admin1, burn_month)
+        FROM h LEFT JOIN country_factors c USING (country, burn_month, pass_slot)
+        LEFT JOIN factors f USING (country, admin1, burn_month, pass_slot)
     """)
 
     con.execute(f"""
@@ -98,7 +153,6 @@ def main() -> None:
         GROUP BY ALL
     """)
 
-    OUT.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY factors TO '{OUT}/factors.csv' (HEADER)")
     con.execute(f"COPY (SELECT * FROM cells ORDER BY burn_date, cell_lat, cell_lon) "
                 f"TO '{OUT}/cells_daily.parquet' (FORMAT parquet, COMPRESSION zstd)")
@@ -111,12 +165,15 @@ def main() -> None:
         FROM cells
     """).fetchone()
     assert viirs_raw == viirs_harm, "VIIRS counts must not change"
-    assert con.execute("SELECT count(*) FROM cells WHERE hotspots_harmonized IS NULL").fetchone()[0] == 0
+    missing = con.execute("""
+        SELECT count(*) FROM cells WHERE hotspots_harmonized IS NULL OR NOT isfinite(hotspots_harmonized)
+    """).fetchone()[0]
+    assert missing == 0, f"{missing} cell-days have MODIS hotspots without a factor"
 
     print(con.execute("""
-        SELECT country, count(*) AS region_months, round(min(factor_terra_aqua), 2) AS min,
+        SELECT country, pass_slot, count(*) AS region_months, round(min(factor_terra_aqua), 2) AS min,
                round(median(factor_terra_aqua), 2) AS median, round(max(factor_terra_aqua), 2) AS max
-        FROM factors GROUP BY 1 ORDER BY 1
+        FROM factors GROUP BY ALL ORDER BY ALL
     """).df().to_string(index=False))
     print(f"\n{con.execute('SELECT count(*) FROM cells').fetchone()[0]:,} cell-day rows "
           f"| raw {raw:,.0f} -> harmonized {harm:,.0f} hotspots")

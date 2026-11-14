@@ -102,3 +102,43 @@ Things to know:
   disagreements with FIRMS. Points outside both polygons (10,476, mostly coastal) keep FIRMS' country and get
   no `admin1`.
 - Credit both sources in the web app.
+
+## Running the web app
+
+The app needs the hotspot table, the quality flags and the harmonized dataset:
+
+```bash
+python scripts/build_hotspots.py
+jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/01_quality.ipynb   # quality flags, about 3 minutes
+python scripts/harmonize.py
+```
+
+```bash
+pip install -r requirements.txt
+cd frontend && npm install && npm run build && cd ..
+uvicorn backend.main:app --port 8000
+```
+
+Open http://localhost:8000. The API serves the built web app.
+
+The fire activity outlook on the map is optional: it appears when
+`NASA_Data_Sources/processed/risk/cells_weekly.parquet` exists (contract C3, written by `scripts/risk_model.py`).
+
+For development, run the API with `uvicorn backend.main:app --reload` and the web app with
+`npm run dev` inside `frontend/` (it proxies `/api` to port 8000). API docs: http://localhost:8000/docs.
+Tests: `pytest`.
+
+## Risk layer (optional)
+
+Probability of fire activity per 0.25° cell and week. Needs the hotspot table and the quality flags.
+
+```bash
+python scripts/risk_baseline.py             # historical rate per cell and week, about 3 seconds
+python scripts/risk_model.py --no-weather   # LightGBM model on top of it, about 10 seconds
+```
+
+Both write `NASA_Data_Sources/processed/risk/cells_weekly.parquet` (contract C3); the model keeps the
+baseline wherever it was not tested out of sample. On macOS, LightGBM also needs `brew install libomp`.
+
+Weather features are optional: `python scripts/risk_weather.py` downloads NASA POWER daily data for
+1,466 points (about 2 hours, resumable), then run `python scripts/risk_model.py` without `--no-weather`.

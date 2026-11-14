@@ -279,6 +279,9 @@ lee CONTRIBUTING.md para las convenciones
 
 # Project status: data pipeline and EDA starting point
 
+> **Current state, the full pipeline and the rules every block follows: `docs/eda-runbook.md`.**
+> This section is older; where the two disagree, the runbook is right.
+
 > Written in English per `CONTRIBUTING.md`. Last updated 2026-11-14.
 
 ## Team direction
