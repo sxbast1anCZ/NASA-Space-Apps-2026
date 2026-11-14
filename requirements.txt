@@ -3,3 +3,10 @@ pyarrow>=15
 matplotlib>=3.8
 seaborn>=0.13
 shapely>=2.0
+tzdata>=2025.2
+pytest>=8
+duckdb>=1.0
+jupyter
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx

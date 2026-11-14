@@ -132,3 +132,24 @@ def test_eligible_cells_only_look_at_earlier_years():
     fire[1, 4, 5] = True   # first fire in the scored year
     keep = rb.eligible_cells(fire, avail, 4)
     assert keep.tolist() == [True, False, False]
+
+
+# ---------------------------------------------------------------- outages (block 1)
+
+def test_outage_week_is_not_observed():
+    years = np.arange(2022, 2023)
+    outages = pd.DataFrame({"satellite": ["Suomi-NPP"], "start": [pd.Timestamp("2022-07-26")],
+                            "end": [pd.Timestamp("2022-08-09")]})
+    days = rb.target_outage_days(outages, "reference", rb.NOAA20_START)
+    avail = rb.observed_weeks(years, pd.Timestamp("2022-01-01"), pd.Timestamp("2022-12-31"), days)
+    hit = {rb.week_index(pd.Series([d]))[0] for d in pd.date_range("2022-07-26", "2022-08-09")}
+    assert not avail[0, sorted(hit)].any()
+    assert avail[0, [w for w in range(rb.N_WEEKS) if w not in hit]].all()
+
+
+def test_outage_of_a_satellite_outside_the_target_is_ignored():
+    outages = pd.DataFrame({"satellite": ["NOAA-20", "Suomi-NPP"],
+                            "start": [pd.Timestamp("2022-07-26"), pd.Timestamp("2026-11-05")],
+                            "end": [pd.Timestamp("2022-07-30"), pd.Timestamp("2026-11-06")]})
+    assert rb.target_outage_days(outages, "reference", rb.NOAA20_START) == set()
+    assert rb.target_outage_days(outages, "all-viirs", rb.NOAA20_START) == set()
