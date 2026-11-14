@@ -27,7 +27,13 @@ FROM (VALUES
     (DATE '2024-03-15', -33.25, -71.75, 'Chile', 'Región de Valparaíso', 'VIIRS', 3, 3.0, true),
     (DATE '2024-03-16', -33.25, -71.75, 'Chile', 'Región de Valparaíso', 'VIIRS', 1, 1.0, true)
 ) t(burn_date, cell_lat, cell_lon, country, admin1, sensor, hotspots_raw, hotspots_harmonized, provisional)
+UNION ALL
+-- Salta, one day every July: 2 in 2011-2012, 8 in 2013-2017, 12 in 2018-2022, 100 in 2023.
+SELECT make_date(y, 7, 15), -25.0, -65.0, 'Argentina', 'Salta', 'VIIRS', v, v, false
+FROM (SELECT y, CASE WHEN y < 2013 THEN 2 WHEN y < 2018 THEN 8 WHEN y < 2023 THEN 12 ELSE 100 END AS v
+      FROM range(2011, 2024) t(y))
 """
+SALTA = {"country": "Argentina", "admin1": "Salta"}
 
 HOTSPOTS = """
 SELECT latitude::DOUBLE AS latitude, longitude::DOUBLE AS longitude, DATE '2024-02-02' AS acq_date, '1830' AS acq_time,
@@ -77,10 +83,11 @@ def test_calendar_sums_the_box_and_flags_estimated_months(client):
     body = client.get("/api/calendar", params=CHILE_BOX).json()
     assert month(body, 2024, 2)["hotspots"] == 10.0          # the Argentine cell is outside the box
     assert month(body, 2010, 2) == {"year": 2010, "month": 2, "hotspots": 7.0, "raw": 2,
-                                    "estimated": True, "provisional": False, "partial": False}
+                                    "estimated": True, "provisional": False, "partial": False,
+                                    "median": 0.0, "ratio": 8.0, "reliable": False}
     assert month(body, 2015, 6)["hotspots"] == 0.0            # months without detections are present
     assert body["cells"] == 1 and body["bounds"] == [-71.75, -33.25, -71.5, -33.0]
-    assert body["median_by_month"][1] == 0.0                  # February: 3 years with fire out of 15
+    assert body["median_by_month"][1] == 0.0                  # February: 1 reference year with fire out of 11
 
 
 def test_partial_month_is_compared_on_the_same_days(client):
@@ -89,7 +96,11 @@ def test_partial_month_is_compared_on_the_same_days(client):
     assert month(body, 2024, 3)["partial"] is True and month(body, 2024, 3)["provisional"] is True
     # 1-15 March: 2024 has 1 + 3. March 2023 had 52 in total but only 2 in days 1-15.
     assert body["current"]["hotspots"] == 4.0 and body["current"]["days"] == 15
-    assert body["current"]["rank"] == 1
+    assert body["current"]["rank"] == 1 and body["current"]["years_compared"] == 11   # 2013 to 2023
+    assert body["current"]["median"] == 0.0 and body["current"]["ratio"] == 5.0       # (4 + 1) / (0 + 1)
+    assert body["current"]["reliable"] is False
+    # The partial month itself gets no ratio: it is not compared with complete months.
+    assert month(body, 2024, 3)["ratio"] is None and month(body, 2024, 3)["reliable"] is False
     assert body["years"][-1] == {"year": 2024, "hotspots": 14.0, "partial": True}
 
 
@@ -104,12 +115,51 @@ def test_region_filter_and_date_range(client):
     assert month(body, 2024, 2)["partial"] is False
 
 
+def test_ratio_with_a_zero_median(client):
+    feb = month(client.get("/api/calendar", params=CHILE_BOX).json(), 2024, 2)
+    # February 2013-2023: only 2023 has fire, so the median is 0. (10 + 1) / (0 + 1).
+    assert (feb["median"], feb["ratio"], feb["reliable"]) == (0.0, 11.0, False)
+
+
+def test_reference_leaves_out_the_year_being_judged(client):
+    body = client.get("/api/calendar", params=SALTA).json()
+    assert body["reference"] == {"mode": "recent", "from_year": 2013, "to_year": 2023}
+    # July 2023 (100) against 2013-2022: five 8s and five 12s. With 2023 inside, the median would be 12.
+    assert (month(body, 2023, 7)["median"], month(body, 2023, 7)["ratio"]) == (10.0, round(101 / 11, 3))
+    assert body["median_by_month"][6] == 12.0                 # the typical year leaves nothing out
+    # A year outside the reference is judged against all of it.
+    assert (month(body, 2012, 7)["median"], month(body, 2012, 7)["ratio"]) == (12.0, round(3 / 13, 3))
+    # The reference does not depend on the period shown.
+    one_year = client.get("/api/calendar", params={**SALTA, "from": "2023-01-01", "to": "2023-12-31"}).json()
+    assert month(one_year, 2023, 7) == month(body, 2023, 7)
+
+
+def test_default_reference_against_all_years(client):
+    recent = client.get("/api/calendar", params=SALTA).json()
+    full = client.get("/api/calendar", params={**SALTA, "reference": "all"}).json()
+    # The record starts in February 2010 and ends in March 2024: complete years are 2011 to 2023.
+    assert full["reference"] == {"mode": "all", "from_year": 2011, "to_year": 2023}
+    # July 2023 with 2011 and 2012 (2 each) in the reference: 2, 2, five 8s, five 12s.
+    assert (month(recent, 2023, 7)["median"], month(full, 2023, 7)["median"]) == (10.0, 8.0)
+    assert month(full, 2023, 7)["ratio"] == round(101 / 9, 3)
+    assert full["current"]["years_compared"] == 13 and recent["current"]["years_compared"] == 11
+
+
+def test_reliable_needs_a_reference_median_of_at_least_10(client):
+    recent = client.get("/api/calendar", params=SALTA).json()
+    full = client.get("/api/calendar", params={**SALTA, "reference": "all"}).json()
+    assert month(recent, 2023, 7)["reliable"] is True         # median exactly 10
+    assert month(full, 2023, 7)["reliable"] is False          # median 8
+    assert month(recent, 2023, 1)["reliable"] is False        # median 0
+
+
 @pytest.mark.parametrize("params", [
     {"west": -72, "south": -33.5, "east": -71.5},                    # incomplete box
     {"west": -71, "south": -33.5, "east": -72, "north": -33},        # west > east
     {"west": -720, "south": -33.5, "east": -71.5, "north": -33},     # out of range
     {"from": "2030-01-01"},                                          # after the data
     {"from": "not-a-date"},
+    {"reference": "2013"},                                           # only 'recent' and 'all' exist
 ])
 def test_bad_input_is_rejected(client, params):
     assert client.get("/api/calendar", params=params).status_code == 422

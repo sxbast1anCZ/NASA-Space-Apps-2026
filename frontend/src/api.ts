@@ -31,7 +31,13 @@ export type Month = {
   estimated: boolean // MODIS scaled to VIIRS-equivalent counts
   provisional: boolean // near-real-time data, replaced about 5 months later
   partial: boolean
+  // Anomaly against the same month of the reference years, leaving out the month's own year.
+  median: number | null
+  ratio: number | null // (hotspots + 1) / (median + 1); null for a partial month
+  reliable: boolean // false when the median is under 10: show the count, not the ratio
 }
+
+export type Reference = 'recent' | 'all'
 
 export type Calendar = {
   from: string
@@ -40,7 +46,8 @@ export type Calendar = {
   cells: number
   bounds: [number, number, number, number] | null // west, south, east, north of the cells used
   months: Month[]
-  median_by_month: (number | null)[]
+  reference: { mode: Reference; from_year: number | null; to_year: number | null }
+  median_by_month: (number | null)[] // over the reference years
   years: { year: number; hotspots: number; partial: boolean }[]
   current: {
     year: number
@@ -49,6 +56,7 @@ export type Calendar = {
     hotspots: number
     median: number | null
     ratio: number | null
+    reliable: boolean
     years_compared: number
     rank: number | null
   }
@@ -75,7 +83,8 @@ export async function errorText(r: Response): Promise<string> {
 }
 
 export const getMeta = () => get<Meta>('/api/meta')
-export const getCalendar = (s: Search) => get<Calendar>(`/api/calendar?${searchParams(s)}`)
+export const getCalendar = (s: Search, reference: Reference) =>
+  get<Calendar>(`/api/calendar?${searchParams(s)}&reference=${reference}`)
 export function getRisk(week: string, s: Search) {
   const p = searchParams(s)
   p.delete('from')

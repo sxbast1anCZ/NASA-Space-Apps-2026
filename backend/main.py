@@ -17,7 +17,7 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 from statistics import median
-from typing import Annotated
+from typing import Annotated, Literal
 
 import duckdb
 from fastapi import FastAPI, HTTPException, Query
@@ -29,6 +29,10 @@ DATA = Path(os.environ.get("FIRE_DATA_DIR", ROOT / "NASA_Data_Sources" / "proces
 CELL = 0.25                    # degrees, cell size of the harmonized dataset
 VIIRS_START = date(2012, 2, 1)  # earlier months are MODIS scaled to VIIRS-equivalent counts
 CSV_ROW_LIMIT = 200_000
+# Anomalies (EDA block 4). The default reference starts in 2013, the first complete VIIRS year:
+# before 2012 fire activity was 1.35 times higher, so an all-years median makes recent months look low.
+REFERENCE_START = 2013
+RELIABLE_MEDIAN = 10           # below this reference median the ratio is not shown as an anomaly
 
 app = FastAPI(title="Harmonized burn calendar")
 _con: duckdb.DuckDBPyConnection | None = None
@@ -82,6 +86,18 @@ def data_through(con) -> date:
     return con.execute("SELECT max(burn_date) FROM cells").fetchone()[0] - timedelta(days=1)
 
 
+def anomaly(x: float | None, reference: list[float]) -> dict:
+    """Median of the reference and the ratio (x + 1) / (median + 1). x is None for a partial month."""
+    if not reference:
+        return {"median": None, "ratio": None, "reliable": False}
+    med = median(reference)
+    return {
+        "median": round(med, 1),
+        "ratio": None if x is None else round((x + 1) / (med + 1), 3),
+        "reliable": x is not None and med >= RELIABLE_MEDIAN,
+    }
+
+
 Lon = Annotated[float | None, Query(ge=-180, le=180)]
 Lat = Annotated[float | None, Query(ge=-90, le=90)]
 
@@ -128,8 +144,14 @@ def calendar(
     country: str | None = None, admin1: str | None = None,
     start: Annotated[date | None, Query(alias="from")] = None,
     end: Annotated[date | None, Query(alias="to")] = None,
+    reference: Literal["recent", "all"] = "recent",
 ):
-    """Harmonized hotspots per year and month for an area, with medians and the current period."""
+    """Harmonized hotspots per year and month for an area, with anomalies and the current period.
+
+    An anomaly compares a month with the median of the same calendar month in the reference years
+    (2013 onward, or every complete year with reference=all), leaving out the year being judged.
+    The reference does not depend on the period asked for.
+    """
     con = db()
     where, params = area_filter(west, south, east, north, country, admin1)
     through = data_through(con)
@@ -151,22 +173,34 @@ def calendar(
         FROM cells WHERE {where} AND burn_date BETWEEN ? AND ? GROUP BY 1, 2
     """, [*params, start, end]).fetchall()}
 
+    # Reference years: complete calendar years only, so a partial month never enters a median.
+    first_year = first.year + (first != date(first.year, 1, 1))
+    last_year = through.year - (through != date(through.year, 12, 31))
+    ref_years = range(max(first_year, REFERENCE_START) if reference == "recent" else first_year, last_year + 1)
+    ref = {(y, m): v for y, m, v in con.execute(f"""
+        SELECT year(burn_date), month(burn_date), sum(hotspots_harmonized)
+        FROM cells WHERE {where} AND year(burn_date) BETWEEN ? AND ? GROUP BY 1, 2
+    """, [*params, ref_years.start, last_year]).fetchall()}
+
     # Every month of the range, including the ones without detections.
     last_month_partial = end.day < cal.monthrange(end.year, end.month)[1]
     months = []
     y, m = start.year, start.month
     while (y, m) <= (end.year, end.month):
         hotspots, raw, provisional = found.get((y, m), (0.0, 0, False))
+        partial = (y, m) == (end.year, end.month) and last_month_partial
         months.append({
             "year": y, "month": m, "hotspots": round(hotspots, 1), "raw": raw,
             "estimated": date(y, m, 1) < VIIRS_START, "provisional": bool(provisional),
-            "partial": (y, m) == (end.year, end.month) and last_month_partial,
+            "partial": partial,
+            # A partial month gets no ratio: it cannot be compared with complete months.
+            **anomaly(None if partial else hotspots, [ref.get((yr, m), 0.0) for yr in ref_years if yr != y]),
         })
         y, m = (y, m + 1) if m < 12 else (y + 1, 1)
 
-    complete = [x for x in months if not x["partial"]]
+    # The typical year: every reference year, nothing left out.
     median_by_month = [
-        round(median(v), 1) if (v := [x["hotspots"] for x in complete if x["month"] == mm]) else None
+        round(median(ref.get((yr, mm), 0.0) for yr in ref_years), 1) if ref_years else None
         for mm in range(1, 13)
     ]
     years = []
@@ -178,26 +212,28 @@ def calendar(
         })
 
     # Current period: never compare a partial month with complete ones. Take the same days
-    # (1 to N) of the same month in every year of the range.
+    # (1 to N) of the same month in the reference years.
     same_days = dict(con.execute(f"""
         SELECT year(burn_date), sum(hotspots_harmonized) FROM cells
-        WHERE {where} AND month(burn_date) = ? AND day(burn_date) <= ? AND burn_date BETWEEN ? AND ?
+        WHERE {where} AND month(burn_date) = ? AND day(burn_date) <= ? AND burn_date <= ?
         GROUP BY 1
-    """, [*params, end.month, end.day, start, end]).fetchall())
-    earlier = [same_days.get(yr, 0.0) for yr in range(start.year, end.year)
-               if date(yr, end.month, 1) >= start]
+    """, [*params, end.month, end.day, through]).fetchall())
+    others = [same_days.get(yr, 0.0) for yr in ref_years if yr != end.year]
     now = same_days.get(end.year, 0.0)
-    med = median(earlier) if earlier else None
     current = {
         "year": end.year, "month": end.month, "days": end.day, "hotspots": round(now, 1),
-        "median": None if med is None else round(med, 1),
-        "ratio": round(now / med, 2) if med else None,
-        "years_compared": len(earlier),
-        "rank": 1 + sum(v > now for v in earlier) if earlier else None,
+        **anomaly(now, others),
+        "years_compared": len(others),
+        "rank": 1 + sum(v > now for v in others) if others else None,
     }
 
     return {
         "from": start, "to": end, "data_through": through,
+        "reference": {
+            "mode": reference,
+            "from_year": ref_years.start if ref_years else None,
+            "to_year": last_year if ref_years else None,
+        },
         "cells": n_cells, "bounds": None if not n_cells else [w, s, e, n],
         "months": months, "median_by_month": median_by_month, "years": years, "current": current,
     }
