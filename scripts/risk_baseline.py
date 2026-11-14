@@ -16,8 +16,8 @@ Outputs (NASA_Data_Sources/processed/risk/):
     baseline_metrics.json      Brier score, average precision and ROC AUC per test year.
 
 Definitions (see docs/eda-plan.md):
-    - Day key `burn_date`: day from 06:00 to 06:00 local solar time, date(UTC + longitude/15 h - 6 h).
-      Taken from the table when the column exists, computed here otherwise (same formula).
+    - Day key `burn_date`: day from 06:00 to 06:00 local solar time, read from the hotspot table
+      (scripts/timefields.py). Rebuild the table with scripts/build_hotspots.py if it is missing.
     - Week: 52 fixed 7-day bins per year. 29 February is merged into 28 February and the last bin
       takes the remaining day (8 days). `week_start` is the first `burn_date` of the bin.
     - Cell: 0.25 degree, identified by its south-west corner.
@@ -27,9 +27,15 @@ Definitions (see docs/eda-plan.md):
       the same periods as scripts/harmonize.py. Counting every VIIRS
       satellite would make the target depend on how many satellites flew each year (1, 2, 3, then 2),
       so a model could learn the satellite count as if it were fire. Use --target all-viirs to compare.
-    - Baseline for year Y, cell c and week w: share of earlier years (Y-1 back to the first year)
-      with fire in c during weeks w-1, w or w+1, shrunk towards the cell's average weekly rate.
-      Only years before Y are used, so the baseline never sees the year it predicts.
+    - Baseline for year Y, cell c and week w: mean weekly fire rate of c over weeks w-1, w and w+1
+      of every earlier year (each observed cell-week counts once), shrunk towards the cell's average
+      weekly rate. A cell that burns in one of the three weeks every year gets about 0.33. The window
+      crosses the year boundary into the adjacent year (week 0 uses week 51 of the year before) and
+      never reads year Y itself, so the baseline never sees the year it predicts.
+    - Cells scored in year Y: cells with at least one reference detection before Y. The universe
+      does not look at Y or later, so cells that burn for the first time in Y are not in the panel.
+    - `last_day`: last complete day of the target satellite (rule 7 in docs/eda-plan.md), not of
+      every satellite.
 
 Run:
     python scripts/risk_baseline.py
@@ -57,23 +63,12 @@ NOAA20_START = pd.Timestamp("2026-11-01")  # Suomi-NPP stopped on 2026-11-02
 COUNTRIES = ("Chile", "Argentina")
 STATIC_FIRE_TYPES = (1, 2, 3)  # volcano, other static land source, offshore
 READ_COLS = [
-    "acq_datetime", "latitude", "longitude", "country", "instrument", "satellite",
+    "burn_date", "latitude", "longitude", "country", "instrument", "satellite",
     "confidence_level", "fire_type",
 ]
 
 
 # ---------------------------------------------------------------- time keys
-
-def add_burn_date(df: pd.DataFrame) -> pd.DataFrame:
-    """Add `burn_date` (datetime64, midnight) when the table does not have it yet."""
-    if "burn_date" in df:
-        df["burn_date"] = pd.to_datetime(df["burn_date"])
-        return df
-    t = pd.to_datetime(df["acq_datetime"], utc=True)
-    shift = pd.to_timedelta(df["longitude"].to_numpy() / 15.0 * 3600.0 - 6 * 3600.0, unit="s")
-    df["burn_date"] = (t + shift).dt.tz_localize(None).dt.floor("D")
-    return df
-
 
 def week_index(dates: pd.Series) -> np.ndarray:
     """52 fixed 7-day bins. 29 February counts as 28 February; the last bin has 8 days."""
@@ -101,6 +96,11 @@ def week_end(year: int, week: int) -> pd.Timestamp:
 # ---------------------------------------------------------------- input
 
 def load_detections(path: Path, drop_low: bool) -> pd.DataFrame:
+    import pyarrow.dataset as ds
+
+    names = ds.dataset(path, format="parquet", partitioning="hive").schema.names
+    if "burn_date" not in names:
+        raise SystemExit("The hotspot table has no burn_date: rebuild it with scripts/build_hotspots.py")
     df = pd.read_parquet(path, columns=READ_COLS, filters=[("instrument", "==", "VIIRS")])
     n0 = len(df)
     df = df[df["country"].astype("object").isin(COUNTRIES)]
@@ -113,13 +113,16 @@ def load_detections(path: Path, drop_low: bool) -> pd.DataFrame:
     outside = (lon < -100) | ((lon > -62) & (lat < -50))
     df = df[~outside.to_numpy()].copy()
     print(f"VIIRS rows read: {n0:,} | kept after filters: {len(df):,}")
-    df = add_burn_date(df)
+    df["burn_date"] = pd.to_datetime(df["burn_date"])
     df["satellite"] = df["satellite"].astype("object")
     return df
 
 
-def select_target_rows(df: pd.DataFrame, target: str) -> tuple[pd.DataFrame, pd.Timestamp, pd.Timestamp]:
-    """Return the rows that define the target, the first covered day and the switch date."""
+def select_target_rows(df: pd.DataFrame, target: str):
+    """Rows that define the target, first covered day, switch day and last complete day.
+
+    `last_day` comes from the satellites of the target only (rule 7 in docs/eda-plan.md).
+    """
     snpp = df[df["satellite"] == "Suomi-NPP"]
     if snpp.empty:
         raise SystemExit("No Suomi-NPP rows: the reference series cannot be built.")
@@ -127,11 +130,14 @@ def select_target_rows(df: pd.DataFrame, target: str) -> tuple[pd.DataFrame, pd.
     switch = NOAA20_START
     df = df[df["burn_date"] >= first_day]
     if target == "all-viirs":
-        return df, first_day, switch
+        ends = df.groupby("satellite")["burn_date"].max()
+        active = ends[ends >= ends.max() - pd.Timedelta(days=30)]  # satellites still delivering
+        return df, first_day, switch, active.min() - pd.Timedelta(days=1)
     keep = ((df["satellite"] == "Suomi-NPP") & (df["burn_date"] < switch)) | (
         (df["satellite"] == "NOAA-20") & (df["burn_date"] >= switch)
     )
-    return df[keep.to_numpy()], first_day, switch
+    rows = df[keep.to_numpy()]
+    return rows, first_day, switch, rows["burn_date"].max() - pd.Timedelta(days=1)
 
 
 # ---------------------------------------------------------------- panel
@@ -141,11 +147,11 @@ def build_panel(rows: pd.DataFrame, years: np.ndarray, cells: pd.DataFrame) -> n
     fire = np.zeros((len(cells), len(years), N_WEEKS), dtype=bool)
     key = rows[["cell_lat", "cell_lon"]].merge(
         cells.reset_index(), on=["cell_lat", "cell_lon"], how="left"
-    )["cell_id"].to_numpy()
+    )["cell_id"].to_numpy(dtype="float64")
     y = rows["burn_date"].dt.year.to_numpy() - years[0]
     w = week_index(rows["burn_date"])
-    ok = (y >= 0) & (y < len(years))
-    fire[key[ok], y[ok], w[ok]] = True
+    ok = (y >= 0) & (y < len(years)) & ~np.isnan(key)  # rows outside the cell universe are ignored
+    fire[key[ok].astype(np.int64), y[ok], w[ok]] = True
     return fire
 
 
@@ -159,17 +165,32 @@ def observed_weeks(years: np.ndarray, first_day: pd.Timestamp, last_day: pd.Time
 
 
 def baseline_for_year(fire: np.ndarray, avail: np.ndarray, i: int, window: int, shrink: float) -> np.ndarray:
-    """Baseline probability[cell, week] for year index i, from years 0..i-1 only."""
-    past_fire = fire[:, :i, :] & avail[None, :i, :]
-    past_avail = avail[:i, :]
-    k = np.zeros((fire.shape[0], N_WEEKS))
+    """Baseline probability[cell, week] for year index i, from years 0..i-1 only.
+
+    Weeks are laid end to end (t = year * 52 + week), so the window of week 0 reaches week 51 of the
+    year before. Source weeks at or after the start of year i are never read.
+    """
+    n_cells, T = fire.shape[0], i * N_WEEKS
+    f = (fire[:, :i, :] & avail[None, :i, :]).reshape(n_cells, T).astype("float32")
+    a = avail[:i, :].reshape(T).astype("float32")
+    k = np.zeros((n_cells, N_WEEKS))
     n = np.zeros(N_WEEKS)
-    for d in range(-window, window + 1):  # neighbouring weeks, wrapping around the year
-        k += np.roll(past_fire.sum(axis=1), -d, axis=1)
-        n += np.roll(past_avail.sum(axis=0), -d)
-    total_obs = past_avail.sum()
-    prior = past_fire.sum(axis=(1, 2)) / total_obs if total_obs else np.zeros(fire.shape[0])
+    for d in range(-window, window + 1):
+        fs, as_ = np.zeros_like(f), np.zeros_like(a)
+        if d >= 0:
+            fs[:, :T - d], as_[:T - d] = f[:, d:], a[d:]
+        else:
+            fs[:, -d:], as_[-d:] = f[:, :T + d], a[:T + d]
+        k += fs.reshape(n_cells, i, N_WEEKS).sum(axis=1)
+        n += as_.reshape(i, N_WEEKS).sum(axis=0)
+    total_obs = a.sum()
+    prior = f.sum(axis=1) / total_obs if total_obs else np.zeros(n_cells)
     return (k + shrink * prior[:, None]) / (n[None, :] + shrink)
+
+
+def eligible_cells(fire: np.ndarray, avail: np.ndarray, i: int) -> np.ndarray:
+    """Cells with at least one observed reference detection before year index i."""
+    return (fire[:, :i, :] & avail[None, :i, :]).any(axis=(1, 2))
 
 
 # ---------------------------------------------------------------- metrics
@@ -226,20 +247,20 @@ def main() -> None:
     df["cell_lat"] = np.floor(df["latitude"] / CELL_DEG) * CELL_DEG
     df["cell_lon"] = np.floor(df["longitude"] / CELL_DEG) * CELL_DEG
 
-    rows, first_day, switch = select_target_rows(df, args.target)
-    last_day = df["burn_date"].max() - pd.Timedelta(days=1)  # the newest day is partial
+    rows, first_day, switch, last_day = select_target_rows(df, args.target)
     print(f"Target: {args.target} | covered {first_day.date()} to {last_day.date()} | "
           f"S-NPP -> NOAA-20 switch on {switch.date()}")
 
     # The forecast horizon can reach into the next calendar year.
     future = [last_day + pd.Timedelta(days=7 * h) for h in range(1, args.horizon_weeks + 1)]
     years = np.arange(first_day.year, max(d.year for d in future) + 1)
-    cells = (rows[["cell_lat", "cell_lon"]].drop_duplicates()
+    # Every VIIRS cell, so any satellite's rows map to a cell; scoring uses eligible_cells().
+    cells = (df[["cell_lat", "cell_lon"]].drop_duplicates()
              .sort_values(["cell_lat", "cell_lon"]).reset_index(drop=True))
     cells.index.name = "cell_id"
     fire = build_panel(rows, years, cells)
     avail = observed_weeks(years, first_day, last_day)
-    print(f"Cells with any detection: {len(cells):,} | years {years[0]}-{years[-1]}")
+    print(f"Cells with any VIIRS detection: {len(cells):,} | years {years[0]}-{years[-1]}")
     obs = fire[:, avail]
     print(f"Observed cell-weeks: {obs.size:,} | with fire: {obs.mean():.2%} | without fire: {1 - obs.mean():.2%}")
 
@@ -265,24 +286,28 @@ def main() -> None:
         if i < args.min_years:
             continue
         prob = baseline_for_year(fire, avail, i, args.window, args.shrink)
+        keep = eligible_cells(fire, avail, i)  # cells with history before this year only
+        if not keep.any():
+            continue
         # Observed weeks, plus the forecast: the current partial week and the next ones.
         weeks = [w for w in range(N_WEEKS)
                  if avail[i, w] or (week_end(yr, w) > last_day and week_start(yr, w) <= future[-1])]
         if not weeks:
             continue
-        observed = np.where(avail[i, weeks][None, :], fire[:, i, weeks], np.nan)
+        observed = np.where(avail[i, weeks][None, :], fire[keep][:, i, weeks], np.nan)
         starts = np.array([week_start(yr, w) for w in weeks], dtype="datetime64[D]")
+        n_keep = int(keep.sum())
         out_rows.append(pd.DataFrame({
-            "week_start": np.tile(starts, len(cells)),
-            "cell_lat": np.repeat(cells["cell_lat"].to_numpy(), len(weeks)),
-            "cell_lon": np.repeat(cells["cell_lon"].to_numpy(), len(weeks)),
-            "baseline_probability": prob[:, weeks].astype("float32").ravel(),
+            "week_start": np.tile(starts, n_keep),
+            "cell_lat": np.repeat(cells["cell_lat"].to_numpy()[keep], len(weeks)),
+            "cell_lon": np.repeat(cells["cell_lon"].to_numpy()[keep], len(weeks)),
+            "baseline_probability": prob[keep][:, weeks].astype("float32").ravel(),
             "observed": observed.ravel(),
         }))
         scored = avail[i, :]
         if scored.any():
-            y_true = fire[:, i, scored].ravel().astype(int)
-            p_pred = prob[:, scored].ravel()
+            y_true = fire[keep][:, i, scored].ravel().astype(int)
+            p_pred = prob[keep][:, scored].ravel()
             metrics[str(yr)] = evaluate(y_true, p_pred)
             pooled_y.append(y_true)
             pooled_p.append(p_pred)
