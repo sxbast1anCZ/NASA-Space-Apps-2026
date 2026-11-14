@@ -49,7 +49,9 @@ Precompute this per grid cell once, so the web app never loads the full rasters.
 |---|---|---|
 | **Valparaíso region, 2–3 Feb 2024** | 138 deaths (final count, Public Prosecutor). 6,974 homes destroyed, 65% of all homes destroyed by wildfires in the region over 10 years. Burned 34% of Viña del Mar and 38% of Valparaíso municipal area. About 9,216 ha (CIGIDEN). | **Central case.** Relatively small area, huge human impact because of nearby population. Directly justifies the exposure analysis. |
 | **Ñuble, Biobío and La Araucanía, Feb 2023** | 25 deaths, about 441,000 ha, 1,987 homes destroyed, 7,038 people affected (Senapred, 19 Feb 2023). | **Contrast.** Far more hectares, fewer deaths. Area burned does not equal impact. |
-| **Chile 2017 season** | 11 deaths, about 6,000 people affected, more than 1,500 homes destroyed, 467,000 ha. | Largest burned area on record. Falls in the MODIS-only era, so it shows why harmonization matters. |
+| **Chile 2017 season** | 11 deaths, about 6,000 people affected, more than 1,500 homes destroyed, 467,000 ha. | Largest burned area on record. Both sensors saw it (Suomi-NPP has data since January 2012): VIIRS recorded 3.3 times as many hotspots as MODIS, so it shows the gap the harmonization closes. |
+| **Torres del Paine, Dec 2011 – Jan 2012** | Started on 27 Dec 2011 near Lago Grey, about 17,600 ha of the national park. | **MODIS-only case.** Before VIIRS existed. The harmonized calendar ranks December 2011 first of 26 years for that area. |
+| **Paraná Delta, Apr 2008** | About 207,000 ha of wetland islands (Entre Ríos and Buenos Aires); smoke covered Buenos Aires on 15–20 April. | **MODIS-only case.** The hotspot peak (18 April) falls inside the smoke episode, and the month ranks first of 26 years. |
 | **Puerto Patriada, Chubut, Jan–Feb 2026** | Started 5 Jan, more than 30,000 ha of native forest, plantations and shrubland, controlled after 39 days. More than 3,000 people evacuated. Preventive evacuation avoided deaths. | **Positive counterexample.** Early warning and timely evacuation saved lives, which is what our tool supports. |
 | **Córdoba 2024, Corrientes 2022** | See `sintesis_desafio_incendios_chile_argentina.md`. | Different fire regimes inside Argentina. |
 | **Chilecito, La Rioja, Jul 2026** | Example used by the challenge author (CONAE) in her audio briefing. | Connects our work to the author's own use case. |
@@ -64,6 +66,8 @@ Replay **Valparaíso, 2 Feb 2024**:
 4. Population within 5 km of the first detections.
 
 This connects all four layers (harmonization, calendar, risk, exposure) in one real case.
+
+What the satellites recorded for every case, pass by pass for Valparaíso: `docs/findings/06-case-studies.md`.
 
 **Note:** official tolls changed a lot over the following days and months (Valparaíso started at 19 deaths and ended at 138). Always quote the final official figure with its source.
 
@@ -80,6 +84,8 @@ This connects all four layers (harmonization, calendar, risk, exposure) in one r
 - [Argentina Census 2022 by census radius (source.coop)](https://source.coop/nlebovits/censo-argentino/2022)
 
 ### Past fires
+- [Torres del Paine 2011, start of the fire (The Clinic)](https://www.theclinic.cl/2011/12/28/incendio-que-ha-quemado-20-hectareas-mantiene-en-alerta-roja-a-torres-del-paine/)
+- [Paraná Delta 2008, official report (Secretaría de Ambiente)](https://www.argentina.gob.ar/sites/default/files/2025/07/2008_-_abril_incendios_delta_del_rio_parana_1.pdf)
 - [Valparaíso 2024, 138 deaths (CNN Chile)](https://www.cnnchile.com/pais/fiscalia-suma-dos-nuevos-fallecidos-eleva-138-victimas-fatales-megaincendio-valparaiso/)
 - [Valparaíso 2024, homes destroyed (Ex-Ante)](https://www.ex-ante.cl/?p=197213)
 - [Valparaíso 2024, CIGIDEN damage report (Emol)](https://www.emol.com/noticias/Nacional/2024/02/15/1121815/cigiden-informe-danos-incendios-valparaiso.html)

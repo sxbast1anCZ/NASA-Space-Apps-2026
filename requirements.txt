@@ -11,5 +11,6 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx
 lightgbm>=4.0
+scikit-learn
 rasterio>=1.3
 pyproj>=3.6
