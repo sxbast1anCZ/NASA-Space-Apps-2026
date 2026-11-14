@@ -190,21 +190,29 @@ def hotspots_csv(
     start: Annotated[date | None, Query(alias="from")] = None,
     end: Annotated[date | None, Query(alias="to")] = None,
 ):
-    """The hotspots of a search: FIRMS' UTC columns untouched, plus the local ones. Not harmonized."""
+    """The hotspots of a search: FIRMS' UTC columns untouched, plus the local ones. Not harmonized.
+
+    Same rows as the calendar: only hotspots that pass the quality filter of block 1.
+    """
     con = db()
     source = DATA / "hotspots"
-    if not source.is_dir():
-        raise HTTPException(503, f"Hotspot table not found at {source}. Run scripts/build_hotspots.py.")
+    flags = DATA / "quality" / "quality_flags.parquet"
+    if not source.is_dir() or not flags.exists():
+        raise HTTPException(503, "Hotspot table or quality flags not found. Run scripts/build_hotspots.py "
+                                 "and notebooks/01_quality.ipynb.")
     where, params = area_filter(west, south, east, north, country, admin1, lat="latitude", lon="longitude", size=0)
-    # Same filter as the calendar: vegetation fires (NRT rows have no fire_type yet and are kept).
-    where += " AND (fire_type = 0 OR fire_type IS NULL)"
     if start:
         where += " AND burn_date >= ?"
         params.append(start)
     if end:
         where += " AND burn_date <= ?"
         params.append(end)
-    table = f"read_parquet('{source}/*/*.parquet', hive_partitioning=true)"
+    table = f"""(
+        SELECT t.* REPLACE (coalesce(q.admin1_fixed, t.admin1) AS admin1)
+        FROM read_parquet('{source}/*/*.parquet', hive_partitioning=true) t
+        JOIN read_parquet('{flags}') q USING (satellite, acq_datetime, latitude, longitude)
+        WHERE q.keep
+    )"""
 
     n = con.execute(f"SELECT count(*) FROM {table} WHERE {where}", params).fetchone()[0]
     if n > CSV_ROW_LIMIT:

@@ -1,5 +1,11 @@
 """Build the harmonized dataset (contract C2 in docs/work-split.md) from the hotspot table.
 
+Inputs: the hotspot table (scripts/build_hotspots.py) and the quality flags of block 1
+(NASA_Data_Sources/processed/quality/quality_flags.parquet, written by notebooks/01_quality.ipynb).
+Only rows with `keep` are used: no low confidence, no static sources, no volcano or offshore rows,
+no Easter Island or Malvinas/Falklands (docs/findings/01-quality.md). Calibrating on the filtered
+rows matters: the filter removes more VIIRS than MODIS.
+
 Output: NASA_Data_Sources/processed/harmonized/
     cells_daily.parquet   one row per 0.25° cell, burn_date, region and sensor with fire
     factors.csv           the MODIS -> VIIRS-equivalent factors that were applied
@@ -25,6 +31,7 @@ import duckdb
 
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "NASA_Data_Sources" / "processed" / "hotspots"
+FLAGS = ROOT / "NASA_Data_Sources" / "processed" / "quality" / "quality_flags.parquet"
 OUT = ROOT / "NASA_Data_Sources" / "processed" / "harmonized"
 
 CALIBRATION_YEARS = (2012, 2021)   # stable MODIS orbits; Suomi-NPP complete from February 2012
@@ -33,19 +40,28 @@ NOAA20_START = "2026-11-01"
 AQUA_START = "2002-07-04"
 CELL = 4                           # cells per degree: 0.25°
 SHRINK_K = 200                     # MODIS detections behind the country prior
-# Vegetation fires only. NRT rows have no fire_type yet, so they are kept.
-# Easter Island and Malvinas/Falklands are outside the analysis (docs/eda-plan.md): each appears
-# in only one of the two download sources. Same rule as scripts/risk_baseline.py.
-FILTER = ("(fire_type = 0 OR fire_type IS NULL) AND longitude >= -100 "
-          "AND NOT (longitude > -62 AND latitude < -50)")
+KEY = "satellite, acq_datetime, latitude, longitude"  # unique per hotspot, shared with the flags
 
 
 def main() -> None:
     con = duckdb.connect()
     con.execute("SET TimeZone='UTC'")
+    if not FLAGS.exists():
+        raise SystemExit(f"{FLAGS} not found. Run notebooks/01_quality.ipynb to create it.")
+    table = f"read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)"
+    unflagged = con.execute(f"""
+        SELECT count(*) FROM {table} t ANTI JOIN read_parquet('{FLAGS}') q USING ({KEY})
+    """).fetchone()[0]
+    if unflagged:
+        raise SystemExit(f"{unflagged:,} hotspots have no quality flag: the flags are older than the "
+                         "table. Re-run notebooks/01_quality.ipynb.")
+    # Rows the polygons missed get the nearest region within 5 km (admin1_fixed, block 1.8).
     con.execute(f"""
-        CREATE VIEW h AS SELECT * FROM read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)
-        WHERE {FILTER}
+        CREATE TABLE h AS
+        SELECT t.burn_date, t.burn_year, t.burn_month, t.pass_slot, t.latitude, t.longitude, t.country,
+               coalesce(q.admin1_fixed, t.admin1) AS admin1, t.instrument, t.satellite, t.processing
+        FROM {table} t JOIN read_parquet('{FLAGS}') q USING ({KEY})
+        WHERE q.keep
     """)
 
     # Factors on the months where both sensors observed.

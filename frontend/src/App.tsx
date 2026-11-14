@@ -356,7 +356,7 @@ export default function App() {
                 <p className="hint">
                   Hotspots in VIIRS-equivalent units, by calendar year. Days run from 06:00 to 06:00 local solar time.
                   Before {MONTHS[1]} 2012 the counts are MODIS detections scaled to the VIIRS level: estimates, within
-                  about 15% (Argentina) and 25% (Chile) for a region and month. * marks a month that is not finished.
+                  about 14% (Argentina) and 24% (Chile) for a region and month. * marks a month that is not finished.
                 </p>
               </section>
 
@@ -379,7 +379,7 @@ export default function App() {
 
       <footer>
         Data: NASA FIRMS (MODIS Collection 6.1, VIIRS 375 m). A hotspot is a thermal detection in a pixel, not a
-        fire: one fire can produce many. Vegetation fires only. Map © OpenStreetMap contributors.
+        fire: one fire can produce many. Low-confidence detections and static heat sources are left out. Map © OpenStreetMap contributors.
       </footer>
     </div>
   )

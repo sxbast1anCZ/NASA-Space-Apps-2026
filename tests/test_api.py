@@ -41,6 +41,13 @@ FROM (VALUES (-33.10, -71.60, 0, 'Chile'), (-33.12, -71.61, NULL, 'Chile'),
      t(latitude, longitude, fire_type, country)
 """
 
+# Quality flags of block 1: the third hotspot is a static source and is not kept.
+FLAGS = f"""
+SELECT satellite, acq_datetime, latitude, longitude, latitude <> -33.11 AS keep,
+       CAST(NULL AS VARCHAR) AS admin1_fixed
+FROM ({HOTSPOTS})
+"""
+
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
@@ -48,6 +55,8 @@ def client(tmp_path, monkeypatch):
     (tmp_path / "hotspots" / "year=2024").mkdir(parents=True)
     duckdb.sql(f"COPY ({CELLS}) TO '{tmp_path}/harmonized/cells_daily.parquet'")
     duckdb.sql(f"COPY ({HOTSPOTS}) TO '{tmp_path}/hotspots/year=2024/part.parquet'")
+    (tmp_path / "quality").mkdir()
+    duckdb.sql(f"COPY ({FLAGS}) TO '{tmp_path}/quality/quality_flags.parquet'")
     monkeypatch.setattr(main, "DATA", tmp_path)
     monkeypatch.setattr(main, "_con", None)
     return TestClient(main.app)
@@ -109,7 +118,7 @@ def test_csv_has_the_hotspots_of_the_search(client):
     r = client.get("/api/hotspots.csv", params={**CHILE_BOX, "from": "2024-02-01", "to": "2024-02-29"})
     lines = r.text.strip().splitlines()
     assert lines[0].split(",")[:4] == ["latitude", "longitude", "acq_date", "acq_time"]
-    assert len(lines) == 3                                   # static source and Argentine point left out
+    assert len(lines) == 3                                   # unkept hotspot and Argentine point left out
     assert r.headers["x-hotspot-count"] == "2"
 
 

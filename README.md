@@ -105,8 +105,13 @@ Things to know:
 
 ## Running the web app
 
-The app needs the hotspot table and the harmonized dataset (`python scripts/build_hotspots.py`, then
-`python scripts/harmonize.py`).
+The app needs the hotspot table, the quality flags and the harmonized dataset:
+
+```bash
+python scripts/build_hotspots.py
+jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/01_quality.ipynb   # quality flags, about 3 minutes
+python scripts/harmonize.py
+```
 
 ```bash
 pip install -r requirements.txt
