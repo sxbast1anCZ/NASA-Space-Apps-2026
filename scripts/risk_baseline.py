@@ -23,7 +23,8 @@ Definitions (see docs/eda-plan.md):
     - Cell: 0.25 degree, identified by its south-west corner.
     - Target: at least one VIIRS detection in the cell during the week. VIIRS only (2012 onward),
       so the target does not depend on the MODIS harmonisation.
-    - Reference series (default): Suomi-NPP until it ends, NOAA-20 after that. Counting every VIIRS
+    - Reference series (default): Suomi-NPP from 2012-02-01 to 2026-10-31, NOAA-20 from 2026-11-01,
+      the same periods as scripts/harmonize.py. Counting every VIIRS
       satellite would make the target depend on how many satellites flew each year (1, 2, 3, then 2),
       so a model could learn the satellite count as if it were fire. Use --target all-viirs to compare.
     - Baseline for year Y, cell c and week w: share of earlier years (Y-1 back to the first year)
@@ -50,6 +51,9 @@ OUT = ROOT / "NASA_Data_Sources" / "processed" / "risk"
 
 CELL_DEG = 0.25
 N_WEEKS = 52
+# Same periods as scripts/harmonize.py (contract C2), so the calendar and the risk layer agree.
+VIIRS_START = pd.Timestamp("2012-02-01")   # Suomi-NPP complete from February 2012
+NOAA20_START = pd.Timestamp("2026-11-01")  # Suomi-NPP stopped on 2026-11-02
 COUNTRIES = ("Chile", "Argentina")
 STATIC_FIRE_TYPES = (1, 2, 3)  # volcano, other static land source, offshore
 READ_COLS = [
@@ -119,8 +123,9 @@ def select_target_rows(df: pd.DataFrame, target: str) -> tuple[pd.DataFrame, pd.
     snpp = df[df["satellite"] == "Suomi-NPP"]
     if snpp.empty:
         raise SystemExit("No Suomi-NPP rows: the reference series cannot be built.")
-    first_day = snpp["burn_date"].min()
-    switch = snpp["burn_date"].max()  # last S-NPP day is partial: NOAA-20 covers it
+    first_day = max(snpp["burn_date"].min(), VIIRS_START)
+    switch = NOAA20_START
+    df = df[df["burn_date"] >= first_day]
     if target == "all-viirs":
         return df, first_day, switch
     keep = ((df["satellite"] == "Suomi-NPP") & (df["burn_date"] < switch)) | (
