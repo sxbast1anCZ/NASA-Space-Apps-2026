@@ -19,7 +19,7 @@ status" part of `CLAUDE.md` is older than this file: where they disagree, this f
 | 4 | Burn calendar | **Done, per sensor** | `notebooks/04_calendar.ipynb`, `docs/findings/04-calendar.md` |
 | 5 | Spatial patterns | Not started | |
 | 6 | Past fire cases | Not started | Block 4.3 has a sanity check only |
-| 7 | Population (WorldPop) | Not started | WorldPop is not downloaded |
+| 7 | Population (WorldPop) | **Done** | `notebooks/07_population.ipynb`, `docs/findings/07-population.md`, `processed/population/cells.parquet` |
 | 8 | Risk model inputs | **Done as scripts** | `scripts/risk_baseline.py`, `scripts/risk_model.py`, `scripts/risk_weather.py` |
 
 Open ends inside the done blocks:
