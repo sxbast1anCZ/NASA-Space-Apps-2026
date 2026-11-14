@@ -121,6 +121,9 @@ uvicorn backend.main:app --port 8000
 
 Open http://localhost:8000. The API serves the built web app.
 
+The fire activity outlook on the map is optional: it appears when
+`NASA_Data_Sources/processed/risk/cells_weekly.parquet` exists (contract C3, written by `scripts/risk_model.py`).
+
 For development, run the API with `uvicorn backend.main:app --reload` and the web app with
 `npm run dev` inside `frontend/` (it proxies `/api` to port 8000). API docs: http://localhost:8000/docs.
 Tests: `pytest`.

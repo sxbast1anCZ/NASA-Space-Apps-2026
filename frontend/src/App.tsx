@@ -1,7 +1,7 @@
 import type { EChartsOption } from 'echarts'
 import { useEffect, useMemo, useState } from 'react'
-import type { Box, Calendar, Meta, Month, Search } from './api.ts'
-import { errorText, getCalendar, getMeta, saveFile, searchParams } from './api.ts'
+import type { Box, Calendar, Meta, Month, RiskCell, Search } from './api.ts'
+import { errorText, getCalendar, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
 import { Chart } from './Chart.tsx'
 import { MapPicker } from './MapPicker.tsx'
 
@@ -188,6 +188,8 @@ export default function App() {
   const [coords, setCoords] = useState(EMPTY_BOX)
   const [coordError, setCoordError] = useState('')
   const [download, setDownload] = useState('')
+  const [riskWeek, setRiskWeek] = useState('')
+  const [risk, setRisk] = useState<RiskCell[] | null>(null)
 
   useEffect(() => {
     getMeta()
@@ -212,6 +214,17 @@ export default function App() {
       stale = true
     }
   }, [search])
+
+  useEffect(() => {
+    if (!search || !riskWeek) return
+    let stale = false
+    getRisk(riskWeek, search)
+      .then((r) => !stale && setRisk(r.cells))
+      .catch((e: Error) => !stale && setError(e.message))
+    return () => {
+      stale = true
+    }
+  }, [riskWeek, search])
 
   const calendar = useMemo(() => data && calendarOption(data, view), [data, view])
   const years = useMemo(() => data && yearsOption(data), [data])
@@ -317,6 +330,28 @@ export default function App() {
           </div>
         </section>
 
+        {meta.risk_weeks.length > 0 && (
+          <section>
+            <h2>Fire activity outlook</h2>
+            <label>
+              Week starting
+              <select value={riskWeek} onChange={(e) => setRiskWeek(e.target.value)}>
+                <option value="">Off</option>
+                {meta.risk_weeks.map((w, i) => <option key={w} value={w}>{i === 0 ? `${w} (this week)` : w}</option>)}
+              </select>
+            </label>
+            {riskWeek && (
+              <ul className="legend" aria-label="Colours of the outlook">
+                {RISK_BINS.map((b) => <li key={b.label}><span style={{ background: b.color }} />{b.label}</li>)}
+              </ul>
+            )}
+            <p className="hint">
+              Chance of at least one hotspot in each cell during the week, from the history of the cell and
+              recent fire nearby. It shows where activity is most likely, not where a fire will start.
+            </p>
+          </section>
+        )}
+
         <section>
           <h2>Download</h2>
           <button type="button" disabled={!data} onClick={() => data && saveFile('burn-calendar.csv', calendarCsv(data))}>
@@ -329,7 +364,17 @@ export default function App() {
       </aside>
 
       <main>
-        <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox} />
+        <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox}
+          risk={riskWeek ? risk : null} cellDegrees={meta.cell_degrees} />
+        {riskWeek && risk && (
+          <p className="hint" role="status">
+            Outlook for the week starting {riskWeek}, in {areaName}:{' '}
+            {risk.length === 0 ? 'no cells with fire history here.'
+              : `${full.format(risk.filter((c) => c[2] >= 0.5).length)} of ${full.format(risk.length)} cells are above 50%; `
+                + `the highest is ${Math.round(Math.max(...risk.map((c) => c[2])) * 100)}%.`}
+            {riskWeek !== meta.risk_weeks[0] && ' Later weeks use the historical rate only.'}
+          </p>
+        )}
         {error && <p role="alert" className="error">{error}</p>}
         {data && calendar && years && season && (
           data.cells === 0 ? (

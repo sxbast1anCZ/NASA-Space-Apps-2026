@@ -17,7 +17,11 @@ export type Meta = {
   viirs_start: string
   cell_degrees: number
   regions: { country: string; admin1: string }[]
+  risk_weeks: string[] // first the week in progress; empty when there is no risk layer
 }
+
+/** [cell_lat, cell_lon, probability, baseline_probability]; the cell is identified by its south-west corner. */
+export type RiskCell = [number, number, number, number]
 
 export type Month = {
   year: number
@@ -72,6 +76,13 @@ export async function errorText(r: Response): Promise<string> {
 
 export const getMeta = () => get<Meta>('/api/meta')
 export const getCalendar = (s: Search) => get<Calendar>(`/api/calendar?${searchParams(s)}`)
+export function getRisk(week: string, s: Search) {
+  const p = searchParams(s)
+  p.delete('from')
+  p.delete('to')
+  p.set('week', week)
+  return get<{ week_start: string; cells: RiskCell[] }>(`/api/risk?${p}`)
+}
 
 export function saveFile(name: string, content: Blob) {
   const a = document.createElement('a')
@@ -80,3 +91,12 @@ export function saveFile(name: string, content: Blob) {
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+// Probability of fire activity in a cell during the week. Yellow to dark red, light to dark.
+export const RISK_BINS = [
+  { from: 0.05, label: '5 to 10%', color: '#ffffb2' },
+  { from: 0.1, label: '10 to 25%', color: '#fecc5c' },
+  { from: 0.25, label: '25 to 50%', color: '#fd8d3c' },
+  { from: 0.5, label: '50 to 75%', color: '#f03b20' },
+  { from: 0.75, label: 'over 75%', color: '#bd0026' },
+]

@@ -41,11 +41,23 @@ FROM (VALUES (-33.10, -71.60, 0, 'Chile'), (-33.12, -71.61, NULL, 'Chile'),
      t(latitude, longitude, fire_type, country)
 """
 
+# Risk layer (contract C3): one week in progress and one old week the API must ignore.
+RISK = """
+SELECT * FROM (VALUES
+    (DATE '2024-03-11', -33.25::DOUBLE, -71.75::DOUBLE, 0.6::FLOAT, 0.4::FLOAT),
+    (DATE '2024-03-11', -27.00::DOUBLE, -60.00::DOUBLE, 0.2::FLOAT, 0.2::FLOAT),
+    (DATE '2024-01-01', -33.25::DOUBLE, -71.75::DOUBLE, 0.9::FLOAT, 0.9::FLOAT)
+) t(week_start, cell_lat, cell_lon, probability, baseline_probability)
+"""
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     (tmp_path / "harmonized").mkdir()
     duckdb.sql(f"COPY ({CELLS}) TO '{tmp_path}/harmonized/cells_daily.parquet'")
     duckdb.sql(f"COPY ({HOTSPOTS}) TO '{tmp_path}/harmonized/hotspots_kept.parquet'")
+    (tmp_path / "risk").mkdir()
+    duckdb.sql(f"COPY ({RISK}) TO '{tmp_path}/risk/cells_weekly.parquet'")
     monkeypatch.setattr(main, "DATA", tmp_path)
     monkeypatch.setattr(main, "_con", None)
     return TestClient(main.app)
@@ -121,3 +133,23 @@ def test_csv_refuses_searches_that_are_too_large(client, monkeypatch):
     monkeypatch.setattr(main, "CSV_ROW_LIMIT", 1)
     r = client.get("/api/hotspots.csv", params=CHILE_BOX)
     assert r.status_code == 413 and "smaller area" in r.json()["detail"]
+
+
+
+def test_risk_lists_only_the_week_in_progress_and_later(client):
+    assert client.get("/api/meta").json()["risk_weeks"] == ["2024-03-11"]
+
+
+def test_risk_returns_the_cells_of_the_area(client):
+    chile = client.get("/api/risk", params={"week": "2024-03-11", **CHILE_BOX}).json()
+    assert chile == {"week_start": "2024-03-11", "cells": [[-33.25, -71.75, 0.6, 0.4]]}
+    argentina = client.get("/api/risk", params={"week": "2024-03-11", "country": "Argentina"}).json()
+    assert argentina["cells"] == [[-27.0, -60.0, 0.2, 0.2]]
+    assert client.get("/api/risk", params={"week": "2024-01-01"}).json()["cells"] == []  # old week
+
+
+def test_app_works_without_a_risk_file(client, tmp_path, monkeypatch):
+    (tmp_path / "risk" / "cells_weekly.parquet").unlink()
+    monkeypatch.setattr(main, "_con", None)
+    assert client.get("/api/meta").json()["risk_weeks"] == []
+    assert client.get("/api/risk", params={"week": "2024-03-11"}).json()["cells"] == []

@@ -1,7 +1,10 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef } from 'react'
-import type { Box } from './api.ts'
+import type { Box, RiskCell } from './api.ts'
+import { RISK_BINS } from './api.ts'
+
+const riskBin = (p: number) => RISK_BINS.findLast((b) => p >= b.from)
 
 const toBounds = (b: Box): L.LatLngBoundsExpression => [
   [b.south, b.west],
@@ -12,12 +15,21 @@ const round = (v: number) => Math.round(v * 1000) / 1000
 /**
  * Map of Chile and Argentina. While `drawing` is on, dragging draws a rectangle and reports it.
  * `box` is the user's selection; `used` is the block of 0.25° cells the data really covers.
+ * `risk` paints one square per cell; cells under 5% are left out to keep the map readable.
  * shortcut: mouse only, touch screens must type the coordinates; add pointer events if needed.
  */
-export function MapPicker(props: { box: Box | null; used: Box | null; drawing: boolean; onDraw: (b: Box) => void }) {
+export function MapPicker(props: {
+  box: Box | null
+  used: Box | null
+  drawing: boolean
+  onDraw: (b: Box) => void
+  risk: RiskCell[] | null
+  cellDegrees: number
+}) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const layers = useRef<L.LayerGroup | null>(null)
+  const riskLayer = useRef<L.LayerGroup | null>(null)
   const onDraw = useRef(props.onDraw)
   useEffect(() => {
     onDraw.current = props.onDraw
@@ -28,6 +40,7 @@ export function MapPicker(props: { box: Box | null; used: Box | null; drawing: b
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(m)
+    riskLayer.current = L.layerGroup().addTo(m) // under the selection outlines
     layers.current = L.layerGroup().addTo(m)
     map.current = m
     // Leaflet measures its container once; tell it when the layout changes.
@@ -84,6 +97,21 @@ export function MapPicker(props: { box: Box | null; used: Box | null; drawing: b
       map.current!.fitBounds(toBounds(props.used), { padding: [10, 10] })
     }
   }, [props.box, props.used])
+
+  useEffect(() => {
+    const group = riskLayer.current!
+    group.clearLayers()
+    const renderer = L.canvas() // thousands of squares: one canvas instead of one SVG node each
+    for (const [lat, lon, p, base] of props.risk ?? []) {
+      const bin = riskBin(p)
+      if (!bin) continue
+      L.rectangle([[lat, lon], [lat + props.cellDegrees, lon + props.cellDegrees]], {
+        renderer, stroke: false, fillColor: bin.color, fillOpacity: 0.7,
+      })
+        .bindTooltip(`${Math.round(p * 100)}% this week (historical rate ${Math.round(base * 100)}%)`)
+        .addTo(group)
+    }
+  }, [props.risk, props.cellDegrees])
 
   return <div ref={el} className="map" aria-label="Map to choose the area of interest" />
 }

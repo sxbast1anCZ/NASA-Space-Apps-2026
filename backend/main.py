@@ -43,6 +43,13 @@ def db() -> duckdb.DuckDBPyConnection:
         con = duckdb.connect()
         con.execute("SET TimeZone='UTC'")
         con.execute(f"CREATE TABLE cells AS SELECT * FROM read_parquet('{cells}')")
+        # Risk layer (contract C3), optional: only the week in progress and the weeks ahead.
+        risk = DATA / "risk" / "cells_weekly.parquet"
+        source = f"read_parquet('{risk}')" if risk.exists() else "(SELECT NULL::DATE AS week_start, 0.0 AS cell_lat, 0.0 AS cell_lon, 0.0 AS probability, 0.0 AS baseline_probability LIMIT 0)"
+        con.execute(f"""
+            CREATE TABLE risk AS SELECT * FROM {source}
+            WHERE week_start > (SELECT max(burn_date) - 8 FROM cells)
+        """)
         _con = con
     return _con.cursor()  # one cursor per request: endpoints run in a thread pool
 
@@ -92,7 +99,27 @@ def meta():
         "viirs_start": VIIRS_START,
         "cell_degrees": CELL,
         "regions": [{"country": c, "admin1": a} for c, a in regions],
+        # Weeks the risk layer covers, first the week in progress. Empty when there is no risk file.
+        "risk_weeks": [w for (w,) in con.execute("SELECT DISTINCT week_start FROM risk ORDER BY 1").fetchall()],
     }
+
+
+@app.get("/api/risk")
+def risk(
+    week: date,
+    west: Lon = None, south: Lat = None, east: Lon = None, north: Lat = None,
+    country: str | None = None, admin1: str | None = None,
+):
+    """Probability of fire activity per cell for one week: [cell_lat, cell_lon, probability, baseline]."""
+    con = db()
+    where, params = area_filter(west, south, east, north, country, admin1)
+    rows = con.execute(f"""
+        SELECT r.cell_lat, r.cell_lon, round(r.probability::DOUBLE, 3), round(r.baseline_probability::DOUBLE, 3)
+        FROM risk r SEMI JOIN (SELECT DISTINCT cell_lat, cell_lon FROM cells WHERE {where}) c
+             USING (cell_lat, cell_lon)
+        WHERE r.week_start = ? ORDER BY 1, 2
+    """, [*params, week]).fetchall()
+    return {"week_start": week, "cells": rows}
 
 
 @app.get("/api/calendar")

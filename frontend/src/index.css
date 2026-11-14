@@ -58,6 +58,7 @@ button.active { background: var(--accent); border-color: var(--accent); color: #
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 fieldset {
+  min-width: 0; /* fieldsets default to min-content and overflow a narrow sidebar */
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 10px;
@@ -70,6 +71,9 @@ fieldset legend { font-size: 0.8rem; color: var(--muted); padding: 0 4px; }
 fieldset button, fieldset .error { grid-column: 1 / -1; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .error { color: #a4161a; font-size: 0.85rem; }
+
+.legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 0.8rem; }
+.legend span { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--line); }
 
 .map { height: 340px; border: 1px solid var(--line); border-radius: 8px; z-index: 0; }
 .figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
