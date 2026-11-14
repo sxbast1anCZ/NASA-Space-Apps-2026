@@ -1,9 +1,10 @@
 # EDA summary: key results and what they mean for the harmonization
 
 Written on 2026-11-14 after re-running the pipeline of `docs/eda-runbook.md` (steps 5 to 9) and the
-notebooks 00, 01, 03 and 04 on the data downloaded that day. Every number below comes from that run
-or from the findings files it reproduced. Statements marked **(inference)** are interpretation, not
-something the data proves. Blocks 2, 5, 6 and 7 are planned in `docs/eda-plan.md` but not run.
+notebooks 00, 01, 03 and 04 on the data downloaded that day. Blocks 5, 6 and 7 were run afterwards on
+the same data (section 2.5). Every number below comes from those runs or from the findings files they
+reproduced. Statements marked **(inference)** are interpretation, not something the data proves.
+Block 2 is planned in `docs/eda-plan.md` but not run.
 
 ## 1. What was checked
 
@@ -14,6 +15,7 @@ something the data proves. Blocks 2, 5, 6 and 7 are planned in `docs/eda-plan.md
 | Harmonized dataset | 1,020,967 cell-day rows, 949 factors |
 | Risk panel | 2,689,584 rows; model beats baseline on 2023-2025 (average precision 0.555 against 0.510) |
 | Notebooks 00, 01, 03, 04 | Run top to bottom without errors |
+| Notebooks 05, 06, 07 | Run top to bottom without errors, after two fixes to my environment (not to the repository). 06 failed with duckdb 2.0.0 and ran from a copy with one cast added (section 5). 07 needed `rasterio` and the two WorldPop rasters (160 MB). About 25 numbers compared with `05-spatial.md`, `06-case-studies.md` and `07-population.md` are identical |
 | Tests | 41 pass. `tests/test_api.py` could not be collected (`fastapi` is not installed here), so the 57 tests in the runbook are not confirmed |
 
 ## 2. Results that matter for the harmonization
@@ -92,6 +94,48 @@ The sign depends on the window, so the project rule is **no trend claim**. This 
 the "median of the same month in other years" mixes the higher MODIS-era level with the VIIRS era, so
 the current-month comparison depends on which years enter the reference.
 
+### 2.5 Blocks 5, 6 and 7: space, past fires and population
+
+None of these blocks changes the factors or contradicts the method (region × month × pass, fitted on
+2012-2021, `K = 200`). They add three checks that the method passes, three places where it has not been
+tested, and what the calendar must show.
+
+**Block 5, spatial patterns** (`05-spatial.md`)
+
+| Finding | Evidence | Effect on the harmonization |
+|---|---|---|
+| The VIIRS-era / MODIS-era density map has no region outline: the jump of the log2 ratio between neighbouring cells is 0.63 inside a region and 0.69 across a region border. Median ratio 0.76 over 2,484 cells, 61% within a factor 2 | 5.1 | The region factors leave no seams in space. This checks for seams, not the level. |
+| The ratio is lowest in the dry Chaco (Santiago del Estero 0.42, Salta 0.46, San Luis and Catamarca 0.43) and highest in the centre-south of Chile (Maule and Ñuble 1.52) and Chubut (2.46) | 5.1 | Same places and direction as the 1.35 level difference of section 2.4: `03b-pre2012-level.md` puts 65% of that excess in Salta and Santiago del Estero. Two views of one pattern (1 / 1.35 = 0.74 against 0.76, different statistics, so only roughly comparable **(inference)**). Still no cause. |
+| 14 of the 35 regions with classified cells hold two or more fire regimes; 21 hold one, including every large region of the north | 5.2 | The factor is per region, so in those 14 it averages cells with different seasons (La Pampa: 58% of its hotspots in the January pulse, 19% in the December pulse, 14% in winter-spring). Whether the VIIRS / MODIS ratio differs between regimes inside a region was not tested. |
+| Two of the four regimes (January and December pulses) are mostly one season: 33% and 37% of their hotspots fall in 2016/17. Fitted on 2012-2018 and 2019-2025 separately, the regimes agree weakly (adjusted Rand index 0.27) | 5.2 | Regimes are not a stable stratum for the factors; do not replace the region with them **(inference)**. |
+| My own query, not in the notebooks: of the December to February Suomi-NPP hotspots in the 2012-2021 calibration window, 48% (La Pampa), 59% (Río Negro) and 65% (Maule) belong to season 2016/17 | `hotspots_kept.parquet` | The summer factors of those regions rest heavily on one season. Their values (2.2 to 3.3) sit in the range of other months and are well supported (La Pampa December: 6,163 VIIRS and 2,090 MODIS rows), except Maule December (651 and 256), where the shrinkage matters. Whether they hold in other summers was not tested. |
+| 0.25° cells are mostly empty: the median cell has no hotspot in 90% of 310 months. Only 759 cells (15%, holding 67% of hotspots) reach a median of 10 in their peak month; 0.5° gives 25% and 82%. South of 45°S and in northern Chile no cell size reaches it | 5.4 | The factors are not applied per cell, so they are unaffected. The calendar needs the reliability flag, and 0.5° is the smallest cell for an anomaly colour. The block 3.10 error per region and month (14% Argentina, 24% Chile) comes on top. |
+| 483 persistent static cells (Neuquén 141, Buenos Aires 73, Entre Ríos 43); the ten busiest have 2,600 to 3,800 days of detections | 5.3 | Confirms the mask is needed. It was built on 2012-2025, so the limit of section 2.2b stands. The site names are a reading of coordinates, not checked. |
+
+**Block 6, past fire cases** (`06-case-studies.md`)
+
+| Finding | Evidence | Effect on the harmonization |
+|---|---|---|
+| The calendar flags every case: of 12 case-months, 9 rank first among 26 years and all rank in the top 4. That includes three MODIS-era months scaled to VIIRS (Torres del Paine Dec 2011 and Jan 2012, Paraná Delta April 2008), all rank 1 | 6.3 | Known events stay on top across the 2012 switch: the harmonized series does not bury MODIS-era fires. This tests ranks, not the scale. |
+| The anomaly ratio breaks at the extremes: median 0.0 gives 514.7 (Torres del Paine), median 5 gives 510 (Puerto Patriada, Jan 2026), median 843 gives only 5.4 (Córdoba, Sep 2024, rank 3). Five of the 12 case-months have a median below 10 | 6.3 | Supports the block 4 threshold of 10 and the `(x + 1) / (median + 1)` form: the app's `x / median` divides by zero when the median is 0 **(inference)**. Rank compares better than ratio. This bears on the open convention of section 4. |
+| MODIS-only cases: Torres del Paine 106 raw hotspots become 552 (factor 5.2); Paraná Delta 3,754 become 16,203 (factor 4.3) | 6.4 | With no VIIRS in the period, these months are the factor times a MODIS count. The ranks survive; the level depends on the factor alone. Hotspots are not hectares (about 17,600 and 207,000 ha), so burned area cannot check it. |
+| Suomi-NPP / (Terra + Aqua) in each case window is 3.3 to 4.0 for the 2017 to 2024 cases and 6.6 for both 2026 cases (Puerto Patriada, Chilecito) | 6.2 | Fits the orbit drift of section 2.2: MODIS is a weaker reference after 2022, and it is not used in the series after 2011. **(inference)** |
+| Valparaíso, 2-3 February 2024, pass by pass: first detection on the reported day (14:47 local, NOAA-20); on the peak night pass, NOAA-20 195, NOAA-21 206 and Suomi-NPP 223 hotspots against 4 for Aqua, 12 minutes apart from Suomi-NPP | 6.2, pass table | One pass, so an anecdote: a night ratio of about 56 against the 13 to 19 of block 3.2. Swath position was not checked. It points at the matching of block 3.5 (section 4, item 2). Night MODIS counts of a single event are rough even after the factor. |
+
+**Block 7, population** (`07-population.md`)
+
+| Finding | Evidence | Effect on the harmonization |
+|---|---|---|
+| WorldPop Chile totals 19.71 million against 18.48 million in the 2024 census (+6.68%), rescaled by 0.9374; Argentina 45.62 million against 45.89 million (-0.60%) | 7.1, 7.2 | None. Population does not enter the harmonization; it only affects the exposure numbers. |
+| Fire is where few people live: cells under 1 person per km² hold 0.7% of people and 41.7% of the 2012-2025 hotspots; under 10 per km², 72%. Cells over 100 hold 73.1% of people and 5.5% of hotspots (3.4 hotspots per 1,000 people against 2,645) | 7.5 | The factors are fitted mostly on rural and wildland fire. Whether the ratio differs in the 5.5% of hotspots in dense cells (agricultural burns, small fires, urban heat the mask missed) was not tested. |
+| Valparaíso 2024 has 1/20 of the hotspots of 3 February 2023 (19.9 times fewer) but similar exposure: 203,956 people within 1 km against 153,077; 1,063,455 within 10 km against 1,459,601 | 7.4, 7.6 | Both rank first in the calendar, which ranks activity, not exposure. Any importance ranking in the app needs a separate exposure layer; the harmonization stays in activity units. |
+| One population year (2024) for every fire year, and WorldPop starts in 2015 | 7 limits | No exposure for MODIS-era events. Do not weight the series by population. |
+
+**What changes in practice (inference).** The method stays. Three tests would protect it: factors by
+regime against by region in the 14 mixed regions, summer factors fitted without 2016/17, and the ratio by
+population-density class (section 4, items 7 to 9). For the app: the reliability flag and 0.5° as the
+smallest cell with an anomaly colour; rank next to the ratio; no ranking by hotspot count alone.
+
 ## 3. Rankings are robust to the choices that were tested
 
 From block 4.5, Spearman rank correlation of yearly rows:
@@ -126,7 +170,19 @@ These are suggestions **(inference)**, not decisions.
    every calendar statistic is per sensor.
 6. **Settle the two open conventions** of the runbook: season label (start year in the table, end
    year in `04-calendar.md`) and anomaly ratio (`(x + 1) / (median + 1)` with a threshold of 10 rows in
-   block 4, `x / median` with no threshold in the app).
+   block 4, `x / median` with no threshold in the app). Block 6 favours the block 4 definition
+   (section 2.5).
+
+Added after blocks 5, 6 and 7:
+
+7. **Factors by regime against by region** in the 14 regions that mix regimes (La Pampa, Río Negro,
+   Neuquén, Corrientes, Maule and others). Compare the error out of sample, as in block 3.11.
+8. **Summer factors without season 2016/17** for La Pampa, Río Negro and Maule: refit on 2012-2021
+   minus that season and see how much the factors and the pre-2012 estimates move.
+9. **The ratio by population-density class** (the four classes of block 7.5), to see whether the
+   factors fitted on rural fire hold in the 5.5% of hotspots that fall in dense cells.
+10. **A control for block 6.** It shows that known fires rank high, not how often an ordinary month
+    does. Count how many region-months rank first or have a ratio above 20 without a known fire.
 
 ## 5. Defects found in the notebooks
 
@@ -141,6 +197,11 @@ None of these changes the harmonized data. Nothing was edited in the repository 
    against "Bío-Bío" and finds nothing, so 6 rows come out for 7 checks.
 4. **`01_quality.ipynb`, section 1.5:** the text says VIIRS stays flat in the `fire_type` 2 share; it
    ranges from 2.2% to 7.8% by year. The conclusion about the mask does not change.
+5. **`06_case_studies.ipynb` fails with duckdb 2.0.0** (installed here; `requirements.txt` only says
+   `duckdb>=1.0`). The pass table of the Valparaíso case calls `date_trunc('hour', acq_datetime)` and
+   duckdb cannot match it to the nanosecond `TIMESTAMPTZ` that pandas writes. I ran a copy with
+   `acq_datetime::TIMESTAMPTZ` added in the `h` view (cell 1); every output matches the committed
+   findings. The repository notebook was not edited. Notebooks 05 and 07 ran unchanged.
 
 Also: the notebook 04 filtered table has 7,000,515 rows with a region, against 7,000,520 in the
 filter. Four of the five are the kept rows without region; the fifth was not traced.
@@ -151,5 +212,8 @@ filter. Four of the five are the kept rows without region; the fifth was not tra
   fire: the table has no cloud or overpass information.
 - No result here says the harmonization is right; the only out-of-sample evidence is the half-split
   of 2012-2021 and the drift years 2022-2025.
+- Blocks 5, 6 and 7 describe where fire is, whether nine known cases show up, and who lives near
+  them. They do not test the harmonization against an independent truth. The case list was chosen by
+  the team and has no control months. Exposure is not damage, and WorldPop models residents only.
 - Block 8 (risk) has no notebook. Its metrics are in `NASA_Data_Sources/processed/risk/*.json`
   (git-ignored), and it does not include weather.
