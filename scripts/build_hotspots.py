@@ -33,6 +33,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+import timefields
+
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "NASA_Data_Sources"
 OUT = DATA / "processed" / "hotspots"
@@ -103,7 +105,7 @@ def read_one(path: Path, folder: str, kind: str, country: str) -> pd.DataFrame:
     return df
 
 
-def normalise(df: pd.DataFrame) -> pd.DataFrame:
+def normalise(df: pd.DataFrame, strict: bool = True) -> pd.DataFrame:
     hhmm = df["acq_time"].str.strip().str.zfill(4)
     df["acq_time"] = hhmm
     df["acq_datetime"] = pd.to_datetime(
@@ -112,6 +114,8 @@ def normalise(df: pd.DataFrame) -> pd.DataFrame:
     df["acq_date"] = df["acq_datetime"].dt.date
     df["year"] = df["acq_datetime"].dt.year.astype("int16")
     df["month"] = df["acq_datetime"].dt.month.astype("int8")
+    # acq_date, year and month above are UTC (FIRMS-compatible). The day key is burn_date.
+    df = timefields.add_solar_fields(df, strict=strict)
 
     unknown = set(df["satellite"].dropna().unique()) - set(SATELLITE_NAMES)
     if unknown:
@@ -183,6 +187,22 @@ def label_regions(lon: np.ndarray, lat: np.ndarray, regions) -> tuple[np.ndarray
     return country, region
 
 
+def nearest_region(lon: np.ndarray, lat: np.ndarray, country: np.ndarray, regions) -> np.ndarray:
+    """Closest region of the same country for each point (used for points the polygons miss)."""
+    import shapely
+
+    points = shapely.points(lon, lat)
+    best = np.full(len(lon), np.inf)
+    nearest = np.full(len(lon), None, dtype=object)
+    for c, r, geom in regions:
+        idx = np.flatnonzero(country == c)
+        dist = shapely.distance(geom, points[idx])
+        closer = dist < best[idx]
+        best[idx[closer]] = dist[closer]
+        nearest[idx[closer]] = r
+    return nearest
+
+
 # ---------------------------------------------------------------- main
 
 def main() -> None:
@@ -219,12 +239,24 @@ def main() -> None:
         df = df[~outside]
         print(f"Yearly rows outside the polygons that keep FIRMS' label: {int(missed.sum()):,}")
         print(f"API rows dropped as outside Chile/Argentina: {int(outside.sum()):,}")
+
+        # Civil time zone comes from the region; rows without one take the nearest region's zone.
+        tz_region = df["admin1"].astype("object").to_numpy(copy=True)
+        no_region = pd.isna(tz_region)
+        tz_region[no_region] = nearest_region(
+            df["longitude"].to_numpy()[no_region], df["latitude"].to_numpy()[no_region],
+            df["country"].astype("object").to_numpy()[no_region], regions,
+        )
+        df["_tz_region"] = tz_region
+        df = timefields.add_civil_fields(df, region_col="_tz_region")
     else:
         df["admin1"] = pd.Categorical([None] * len(df))
         print(f"No boundary files in {BOUNDARIES}: API rows keep country empty, no admin1.")
 
     cols = [
         "acq_datetime", "acq_date", "acq_time", "year", "month", "daynight",
+        "solar_time_h", "pass_slot", "burn_date", "burn_year", "burn_month", "season_year",
+        "tz_name", "utc_offset_min", "local_wall_time", "local_date",
         "latitude", "longitude", "country", "admin1", "country_firms",
         "instrument", "satellite", "processing", "version",
         "confidence_level", "confidence_pct", "confidence_raw",
@@ -232,7 +264,7 @@ def main() -> None:
         "scan_km", "track_km", "pixel_area_km2", "fire_type",
         "source", "source_file",
     ]
-    df = df[cols].sort_values(["acq_datetime", "satellite"]).reset_index(drop=True)
+    df = df[[c for c in cols if c in df]].sort_values(["acq_datetime", "satellite"]).reset_index(drop=True)
 
     if args.out.exists():
         shutil.rmtree(args.out)
