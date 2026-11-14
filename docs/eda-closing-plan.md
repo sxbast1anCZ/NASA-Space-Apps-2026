@@ -34,7 +34,7 @@ Effort is an estimate for one person with a coding agent.
 
 | # | Loose end | Why it matters | How to close it | Effort |
 |---|---|---|---|---|
-| A1 | **Satellite outages leave holes in the series.** Suomi-NPP was out from 26 July to 9 August 2022; NOAA-20 recorded 7,715 hotspots on those days and the series has none. Five more Suomi-NPP outages in 2024 and 2026 (24 days). | August 2022 is undercounted in the calendar, in northern Argentina's peak season. | In `scripts/harmonize.py`, use NOAA-20 on the outage days of Suomi-NPP (`quality/outage_days.csv`; NOAA-20 / Suomi-NPP is 0.93 to 1.03). For the MODIS-era outages (Terra 2001, 2002, 2003, 2008; Aqua 2002, 2005) there is no substitute: add an `outage` flag per day so the app can mark the month as partly observed. Test, regenerate, update block 3 findings. | 45 min |
+| A1 | **Satellite outages leave holes in the series.** Suomi-NPP was out from 26 July to 9 August 2022; NOAA-20 recorded 7,715 hotspots on those days and the series has none. Five more Suomi-NPP outages in 2024 and 2026 (24 days). | August 2022 is undercounted in the calendar, in northern Argentina's peak season. | In `scripts/harmonize.py`, use NOAA-20 on the outage days of Suomi-NPP (`quality/outage_days.csv`; NOAA-20 / Suomi-NPP is 0.93 to 1.03). For the MODIS-era outages (Terra 2001, 2002, 2003, 2008; Aqua 2002, 2005) there is no substitute: add an `outage` flag per day so the app can mark the month as partly observed. Test, regenerate, update block 3 findings. | **Done** in the data: the 39 Suomi-NPP outage days now carry 17,318 NOAA-20 hotspots, and `harmonized/outage_days_in_series.csv` lists the 91 outage days (`03-modis-vs-viirs.md`, "Outage days"). Still open: the app does not mark the months yet. |
 | A2 | **Block 4 is per sensor.** Its three re-runs on the harmonized data are pending. | The calendar statistics the team documented (seasonality, anomalies, rankings) are not the ones the app shows. | Re-run `notebooks/04_calendar.ipynb` with `cells_daily.parquet` as its base table (its own section "When C2 exists"). Fix its two defects at the same time (A6). | 45 min |
 | A3 | **Two anomaly definitions.** Block 4: `(x + 1) / (median + 1)`, reference without the year being judged, no colour when the median is under 10. App: `x / median`, reference includes the year, no threshold. | The same month gets two different numbers in the documents and in the app. | Apply block 4's definition in `backend/main.py` (`ratio`, `reliable`, leave-one-out median) and in the calendar view; tests. | 45 min |
 | A4 | **The reference years mix two levels.** 2003-2011 is 1.35 times higher than 2013-2021 (real, per MODIS). | "Compared with the median" changes with the years chosen: a normal recent month looks low against the 2000s. | Default reference: the last 10 complete years; the full record stays as an option. State the reference next to the number. Decide with the team. | 30 min |
@@ -86,7 +86,8 @@ Ready today on `main`: area by drawing, coordinates or region; period; calendar 
 comparison with the median of the same days; rankings; colour-blind-safe ramps; CSV of hotspots and of
 the calendar; charts as images; estimates and provisional months labelled.
 
-To make it match the EDA: A1 (outages), A3 (one anomaly definition), A4 (reference years).
+To make it match the EDA: A3 (one anomaly definition), A4 (reference years). A1 (outages) is done
+in the data; marking the partly observed months in the app is not.
 Not built: a view of one day, a season view, touch drawing, deployment.
 
 ### A view of the current situation
@@ -131,7 +132,7 @@ Wording for all of it: where fire activity is most likely. Not where a fire will
 
 | Step | Items | Why first | Effort |
 |---|---|---|---|
-| 1 | A1 | It changes the dataset every other item reads | 45 min |
+| 1 | A1 | It changes the dataset every other item reads | done |
 | 2 | A3, A4, A5 | One calendar definition for documents and app | 1.5 h |
 | 3 | A2, A6 | The calendar block on the harmonized data, with clean outputs | 1.25 h |
 | 4 | A7 | Protects the risk layer before it grows a daily version | 45 min |

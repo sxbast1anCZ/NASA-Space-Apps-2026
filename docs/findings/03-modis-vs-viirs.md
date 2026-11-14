@@ -23,14 +23,17 @@ Run `notebooks/01_quality.ipynb` once to create the quality flags, then `python 
 - `hotspots_kept.parquet`: the 7,000,520 hotspots that pass the filter, one row each (152 MB). The
   CSV download of the web app and notebook 03 read this file, so the filter, its checks and the
   region names live in one place.
-- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,020,967 rows, 3 MB. The harmonized
+- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,026,554 rows, 3 MB. The harmonized
   count of any area and period is the **sum of `hotspots_harmonized`**. A cell that crosses a region
   border has one row per region: always sum, never count rows.
 - `factors.csv`: the 949 factors per region, month and pass. Day pass: 0.9 to 4.1, median 2.8
   (Argentina) and 2.7 (Chile). Night pass: 3.8 to 19.5, median 7.2 and 8.4.
+- `outage_days_in_series.csv`: the 91 days on which a satellite of the series did not report
+  (`burn_date`, `satellite`, `substitute`). See "Outage days" below.
 - `validation_yearly.csv`.
 
-The script stops if the flags file is missing or older than the hotspot table.
+The script stops if the flags file is missing or older than the hotspot table. If
+`quality/outage_days.csv` is missing it says so and builds the series without the outage rule.
 
 Region of the rows the polygons missed: they take `admin1_fixed` from block 1 only when that name,
 with its encoding repaired as in `scripts/build_hotspots.py`, is a region of the row's own country.
@@ -38,12 +41,50 @@ This keeps one spelling per region (40 regions: 24 in Argentina, 16 in Chile) an
 Chile / Neuquén. 4 kept rows stay without region.
 
 One sensor per period, so nothing is counted twice: MODIS before 2012-02-01, Suomi-NPP until
-2026-10-31, NOAA-20 after. Factor: `(V + 200 × country_factor) / (M + 200)`, with V and M the
+2026-10-31, NOAA-20 after. One exception: on a day of a Suomi-NPP outage the series takes NOAA-20
+instead of Suomi-NPP (see "Outage days"). Every day still has one satellite, or Terra and Aqua
+together in the MODIS era. Factor: `(V + 200 × country_factor) / (M + 200)`, with V and M the
 Suomi-NPP and MODIS counts of the region, month and pass in 2012-2021. Hotspots without a region use
 the country factor of their month and pass. Before 2002-07-04 (no Aqua) a second set of factors,
 fitted on Terra rows, applies.
 
 ![Before and after harmonization](03-harmonization.png)
+
+### Outage days
+
+Block 1 lists the runs of days on which a satellite did not report (`quality/outage_days.csv`).
+Suomi-NPP has six of them inside its period of the series: 39 days with no hotspots at all.
+
+Rule: on a `burn_date` inside a Suomi-NPP outage, the series takes the NOAA-20 hotspots of that day,
+with no factor (NOAA-20 / Suomi-NPP is 0.93 to 1.03 per year). It applies only where NOAA-20 had data
+(from April 2018) and was not in an outage itself. The factors do not change: the calibration years
+2012-2021 contain no Suomi-NPP outage, and `factors.csv` is identical to the one before the rule.
+
+| Suomi-NPP outage | Days | Hotspots in the series before | After (NOAA-20) |
+|---|---|---|---|
+| 2022-07-26 to 2022-08-09 | 15 | 0 | 7,715 |
+| 2024-05-30 to 2024-06-02 | 4 | 0 | 721 |
+| 2024-07-10 to 2024-07-15 | 6 | 0 | 2,319 |
+| 2024-07-24 to 2024-07-28 | 5 | 0 | 4,041 |
+| 2024-11-03 to 2024-11-05 | 3 | 0 | 390 |
+| 2026-07-10 to 2026-07-15 | 6 | 0 | 2,132 |
+| Total | 39 | 0 | 17,318 |
+
+| Harmonized hotspots | Before | After |
+|---|---|---|
+| 2022 | 289,498 | 297,213 |
+| 2024 | 146,933 | 154,404 |
+| 2026 (to 2026-11-13) | 102,779 | 104,911 |
+| Whole series | 6,009,000 | 6,026,318 |
+
+No other day changes: the daily sums of the other 9,404 days with hotspots are the same before and
+after (the largest difference is 4e-12, the rounding noise between two runs of the script).
+
+The MODIS-era outages have no substitute: Terra on 41 days (2001, 2002, 2003, 2008) and Aqua on 11
+days (2002, 2005). On those days the series has the other MODIS satellite only, or nothing before
+Aqua, and the count is too low. `outage_days_in_series.csv` lists all 91 days with the satellite
+that was out and its substitute (`NOAA-20` or empty), so that the app can mark those months as
+partly observed. The app does not read it yet.
 
 ## How different the sensors are
 

@@ -10,11 +10,14 @@ Output: NASA_Data_Sources/processed/harmonized/
     hotspots_kept.parquet the hotspots that pass the filter, one row each, region corrected
     cells_daily.parquet   one row per 0.25° cell, burn_date, region and sensor with fire
     factors.csv           the MODIS -> VIIRS-equivalent factors that were applied
+    outage_days_in_series.csv  the days on which a satellite of the series did not report
 
 One sensor per period, so nothing is counted twice:
     burn_date <  2012-02-01   MODIS (Terra + Aqua), scaled to VIIRS-equivalent counts
     2012-02-01 .. 2026-10-31  VIIRS Suomi-NPP, unchanged
     burn_date >= 2026-11-01   VIIRS NOAA-20, unchanged (Suomi-NPP stopped on 2026-11-02)
+Exception: on a day of a Suomi-NPP outage (quality/outage_days.csv, block 1) the series takes
+NOAA-20 instead, unchanged. MODIS outages and outages before NOAA-20 had data have no substitute.
 
 Method (chosen in block 3, docs/findings/03-modis-vs-viirs.md): factor = Suomi-NPP count / MODIS
 count over the calibration years, per region, calendar month and pass (day or night), shrunk
@@ -35,15 +38,57 @@ from build_hotspots import fix_mojibake
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "NASA_Data_Sources" / "processed" / "hotspots"
 FLAGS = ROOT / "NASA_Data_Sources" / "processed" / "quality" / "quality_flags.parquet"
+OUTAGES = ROOT / "NASA_Data_Sources" / "processed" / "quality" / "outage_days.csv"
 OUT = ROOT / "NASA_Data_Sources" / "processed" / "harmonized"
 
 CALIBRATION_YEARS = (2012, 2021)   # stable MODIS orbits; Suomi-NPP complete from February 2012
 VIIRS_START = "2012-02-01"
 NOAA20_START = "2026-11-01"
+NOAA20_FIRST_DATA = "2018-04-01"   # first full month of NOAA-20 hotspots: no substitute before it
 AQUA_START = "2002-07-04"
 CELL = 4                           # cells per degree: 0.25°
 SHRINK_K = 200                     # MODIS detections behind the country prior
 KEY = "satellite, acq_datetime, latitude, longitude"  # unique per hotspot, shared with the flags
+
+# Which hotspots enter the series. Needs the table `series_outages` (load_outages).
+IN_SERIES = f"""CASE
+    WHEN burn_date < DATE '{VIIRS_START}' THEN instrument = 'MODIS'
+    WHEN burn_date >= DATE '{NOAA20_START}' THEN satellite = 'NOAA-20'
+    WHEN burn_date IN (SELECT burn_date FROM series_outages WHERE substitute = 'NOAA-20')
+        THEN satellite = 'NOAA-20'
+    ELSE satellite = 'Suomi-NPP' END"""
+
+
+def load_outages(con: duckdb.DuckDBPyConnection, outages: Path) -> None:
+    """Create `series_outages`: one row per day on which a satellite of the series did not report.
+
+    Columns: burn_date, satellite, substitute. `substitute` is 'NOAA-20' on a Suomi-NPP outage day
+    when NOAA-20 had data and was not in an outage itself, otherwise NULL. Without the outage file
+    the table is empty and the series is built without the fill.
+    """
+    if outages.exists():
+        source = f"read_csv('{outages}')"
+    else:
+        print(f"{outages} not found: Suomi-NPP outage days are not filled with NOAA-20. "
+              "Run notebooks/01_quality.ipynb to create it.")
+        source = '(SELECT NULL::VARCHAR AS satellite, NULL::DATE AS "start", NULL::DATE AS "end" WHERE false)'
+    con.execute(f"""
+        CREATE OR REPLACE TABLE series_outages AS
+        WITH days AS (
+            SELECT satellite,
+                   unnest(generate_series("start"::DATE, "end"::DATE, INTERVAL 1 DAY))::DATE AS burn_date
+            FROM {source}
+        )
+        SELECT burn_date, satellite,
+               CASE WHEN satellite = 'Suomi-NPP' AND burn_date >= DATE '{NOAA20_FIRST_DATA}'
+                         AND burn_date NOT IN (SELECT burn_date FROM days WHERE satellite = 'NOAA-20')
+                    THEN 'NOAA-20' END AS substitute
+        FROM days
+        WHERE CASE WHEN burn_date < DATE '{VIIRS_START}' THEN satellite IN ('Terra', 'Aqua')
+                   WHEN burn_date < DATE '{NOAA20_START}' THEN satellite = 'Suomi-NPP'
+                   ELSE satellite = 'NOAA-20' END
+        ORDER BY ALL
+    """)
 
 
 def build_kept(con: duckdb.DuckDBPyConnection, table: str, flags: Path, out: Path) -> int:
@@ -129,15 +174,10 @@ def main() -> None:
         LEFT JOIN factors f USING (country, admin1, burn_month, pass_slot)
     """)
 
+    load_outages(con, OUTAGES)
     con.execute(f"""
         CREATE TABLE cells AS
-        WITH series AS (
-            SELECT *, CASE
-                WHEN burn_date < DATE '{VIIRS_START}' THEN instrument = 'MODIS'
-                WHEN burn_date < DATE '{NOAA20_START}' THEN satellite = 'Suomi-NPP'
-                ELSE satellite = 'NOAA-20' END AS in_series
-            FROM hf
-        )
+        WITH series AS (SELECT *, {IN_SERIES} AS in_series FROM hf)
         SELECT s.burn_date,
                floor(s.latitude * {CELL}) / {CELL} AS cell_lat,
                floor(s.longitude * {CELL}) / {CELL} AS cell_lon,
@@ -154,6 +194,7 @@ def main() -> None:
     """)
 
     con.execute(f"COPY factors TO '{OUT}/factors.csv' (HEADER)")
+    con.execute(f"COPY series_outages TO '{OUT}/outage_days_in_series.csv' (HEADER)")
     con.execute(f"COPY (SELECT * FROM cells ORDER BY burn_date, cell_lat, cell_lon) "
                 f"TO '{OUT}/cells_daily.parquet' (FORMAT parquet, COMPRESSION zstd)")
 
@@ -177,6 +218,8 @@ def main() -> None:
     """).df().to_string(index=False))
     print(f"\n{con.execute('SELECT count(*) FROM cells').fetchone()[0]:,} cell-day rows "
           f"| raw {raw:,.0f} -> harmonized {harm:,.0f} hotspots")
+    days, filled = con.execute("SELECT count(*), count(substitute) FROM series_outages").fetchone()
+    print(f"{days} outage days in the series, {filled} filled with NOAA-20")
     validate(con)
 
 

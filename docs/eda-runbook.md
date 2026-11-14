@@ -57,7 +57,7 @@ builds its own copy.
 | 4 | `./scripts/download_boundaries.sh` | 1 min | `boundaries/*.geojson`: 118 MB |
 | 5 | `python scripts/build_hotspots.py` | 30 s | `processed/hotspots/`: 8,042,380 rows |
 | 6 | `jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/01_quality.ipynb` | 3 min | `processed/quality/quality_flags.parquet`, `static_mask_cells.parquet`, `outage_days.csv` |
-| 7 | `python scripts/harmonize.py` | 3 s | `processed/harmonized/hotspots_kept.parquet`, `cells_daily.parquet`, `factors.csv`, `validation_yearly.csv` |
+| 7 | `python scripts/harmonize.py` | 3 s | `processed/harmonized/hotspots_kept.parquet`, `cells_daily.parquet`, `factors.csv`, `outage_days_in_series.csv`, `validation_yearly.csv` |
 | 8 | `python scripts/risk_baseline.py` | 3 s | `processed/risk/cells_weekly.parquet`, `baseline_eval.parquet`, `baseline_metrics.json` |
 | 9 | `python scripts/risk_model.py --no-weather` | 10 s | `processed/risk/cells_weekly.parquet` (replaces step 8), `model_eval.parquet`, `model_metrics.json` |
 
@@ -87,13 +87,14 @@ If your run gives different numbers, stop and find out why before analysing anyt
 |---|---|
 | 5 | `Wrote 8,042,380 rows`; 3 exact duplicates dropped; 1,149,423 API rows dropped as outside both countries |
 | 6 | `quality_flags.parquet` has 8,042,380 rows; 7,000,520 with `keep` (12.95% removed) |
-| 7 | `7,000,520 hotspots pass the quality filter`; `1,020,967 cell-day rows`; 949 factors |
+| 7 | `7,000,520 hotspots pass the quality filter`; `1,026,554 cell-day rows`; `raw 3,833,709 -> harmonized 6,026,318 hotspots`; `91 outage days in the series, 39 filled with NOAA-20`; 949 factors |
 | 8 | `Wrote 2,689,584 rows`; 9 weeks not observed because of outages |
 | 9 | `Model beats baseline on 2023-2025: YES` (average precision 0.555 against 0.510) |
 
 The download date changes the first two rows: the recent months are near-real-time data that FIRMS
 keeps revising. The numbers above are for data downloaded on 2026-11-14. A download later the same
-day gave 8,042,448 rows and 7,000,575 kept (68 and 55 more); `cells_daily.parquet` still had 1,020,967 rows.
+day gave 8,042,448 rows and 7,000,575 kept (68 and 55 more); `cells_daily.parquet` had the same
+number of rows with both downloads (1,020,967, counted before the Suomi-NPP outage days were filled).
 
 ## Running the analysis notebooks
 
@@ -153,7 +154,7 @@ df = con.execute("""
 | Outside the analysis | Easter Island and Malvinas/Falklands | Block 1 |
 | Units | VIIRS-equivalent hotspots | Block 3 |
 | Harmonization | Factor per region, calendar month and pass, fitted on 2012-2021 | Block 3 |
-| One sensor per period | MODIS before 2012-02-01, Suomi-NPP until 2026-10-31, NOAA-20 after | Block 3 |
+| One sensor per period | MODIS before 2012-02-01, Suomi-NPP until 2026-10-31, NOAA-20 after. On the 39 days of a Suomi-NPP outage, NOAA-20 instead of Suomi-NPP | Block 3 |
 | Sensor comparisons | Use `pass_slot`, not `daynight`; compare one satellite with one satellite | Blocks 0 and 3 |
 | Partial periods | Last complete `burn_date`: 2026-11-12. Compare the current month with the same days (1 to N) of other years. | Blocks 0 and 4 |
 | Provisional data | `processing = 'NRT'`: August 2026 onward for VIIRS, September 2026 onward for MODIS | Block 1 |

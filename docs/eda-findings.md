@@ -38,6 +38,8 @@ If a decision changes, change it here and in the findings file of its block, in 
 |---|---|---|
 | Units | VIIRS-equivalent hotspots | 3 |
 | One sensor per period | MODIS before 2012-02-01; Suomi-NPP until 2026-10-31; NOAA-20 after | 3 |
+| Suomi-NPP outage days | The series takes NOAA-20 instead, no factor: 39 days in 2022, 2024 and 2026, 17,318 hotspots (7,715 of them from 2022-07-26 to 2022-08-09). The factors are not affected: no outage in 2012-2021 | 1, 3 |
+| MODIS-era outage days | No substitute: 41 days of Terra and 11 of Aqua stay undercounted. Listed with the others in `harmonized/outage_days_in_series.csv` | 1, 3 |
 | Method | Factor = Suomi-NPP / MODIS per region, calendar month and pass, shrunk towards the country factor with a weight of 200 MODIS detections | 3 |
 | Calibration window | 2012-2021 (MODIS orbits drift from 2022) | 0, 3 |
 | Before Aqua (before 2002-07-04) | Separate factors fitted on Terra rows | 3 |
@@ -68,11 +70,11 @@ The web app does not follow the anomaly rows yet: see A3 and A4 in `docs/eda-clo
 
 | Decision | Value | Block |
 |---|---|---|
-| Never add satellites | One satellite per period in every count | 2, 8 |
+| Never add satellites | One satellite per period in every count. On a Suomi-NPP outage day NOAA-20 replaces it, it is not added | 2, 3, 8 |
 | Wording for "no hotspots" | "No hotspots detected. This does not mean there was no fire: clouds, small or short fires and the hours of the satellite passes can hide one." | 2 |
 | Winter counts | A lower bound in central and southern Chile and in Neuquén | 2 |
 | South of 40°S | No statement about observation quality | 2 |
-| Outages | Listed in `quality/outage_days.csv` (19 runs); weeks with one are not observed in the risk target | 1, 8 |
+| Outages | Listed in `quality/outage_days.csv` (19 runs). 91 days fall on a satellite of the harmonized series (`harmonized/outage_days_in_series.csv`): 39 of Suomi-NPP, filled with NOAA-20, and 52 of Terra or Aqua before 2012, not filled. Weeks with an outage are not observed in the risk target | 1, 3, 8 |
 
 ## Cases, population, risk
 
