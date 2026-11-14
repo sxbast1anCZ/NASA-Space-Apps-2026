@@ -4,7 +4,8 @@ For team members and their coding agents. Last checked on 2026-11-14 on `main` a
 Python 3.12 on macOS. Every command here was run on `main` that day, except notebook 07, which was
 run by its author (it needs the WorldPop rasters).
 
-Read this before `docs/eda-plan.md` (the plan) and `docs/findings/` (the results). The "Project
+Read this before `docs/eda-plan.md` (the plan) and `docs/findings/` (the results). Every decision in
+one list: `docs/eda-findings.md`. Loose ends and how to close them: `docs/eda-closing-plan.md`. The "Project
 status" part of `CLAUDE.md` is older than this file: where they disagree, this file is right.
 
 ## Where the EDA stands

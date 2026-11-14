@@ -76,6 +76,21 @@ Why weather adds so little here, as far as this block can tell: the baseline and
 carry the average weather of each place and week, the weather grid is coarse (0.5°) and a week is a
 long window. Whether finer or daily weather would do better was not tested.
 
+## From one day to the next
+
+Measured for the next phase (a view of tomorrow), with Suomi-NPP, 2013-2025, 0.25° cells and `burn_date`.
+
+| Question | Answer |
+|---|---|
+| Share of all cell-days with fire | 2.56% |
+| A cell with fire today has fire tomorrow | 33.3% of the time, 13 times the base rate |
+| Of the cells with fire on a day, share that had fire the day before | 33.3% |
+| Of the cells with fire on a day, share with fire the day before in the cell or one of its 8 neighbours | 64.7% |
+
+About two thirds of tomorrow's fire cells are in or next to today's. The other third starts
+somewhere that showed nothing the day before: that part cannot come from yesterday's hotspots, and it
+is where weather forecasts and the seasonal baseline would have to help. Not tested.
+
 ## Calibration
 
 ![Calibration](08-calibration.png)

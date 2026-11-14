@@ -127,6 +127,38 @@ in raw MODIS, which needs no factor. Both periods have Terra and Aqua on stable 
 Rows: quality filter of block 1, `burn_year`. Computed on 2026-11-14 from `hotspots_kept.parquet`
 and `cells_daily.parquet`.
 
+### Two more checks of the MODIS-era level
+
+**The level does not depend on the settings of the method.** Mean harmonized hotspots per year in
+2003-2011, re-running `scripts/harmonize.py` with other settings:
+
+| Setting | Mean per year | Change |
+|---|---|---|
+| As in `main`: shrinkage 200, fit on 2012-2021 | 278,896 | |
+| Shrinkage 50 | 279,449 | +0.2% |
+| Shrinkage 1,000 | 280,043 | +0.4% |
+| Fit on 2012-2016 only | 278,856 | 0.0% |
+| Fit on 2017-2021 only | 280,553 | +0.6% |
+
+**Terra alone and Aqua alone tell the same history.** Each satellite scaled with its own factor
+(Suomi-NPP / that satellite, per country, month and pass, 2012-2021). They pass about three and a half
+hours apart, so this is two separate observations of the same years.
+
+| Year | From Terra | From Aqua | Terra / Aqua |
+|---|---|---|---|
+| 2003 | 359,532 | 387,835 | 0.93 |
+| 2004 | 328,265 | 325,430 | 1.01 |
+| 2005 | 245,109 | 234,985 | 1.04 |
+| 2006 | 270,435 | 265,800 | 1.02 |
+| 2007 | 261,102 | 258,481 | 1.01 |
+| 2008 | 360,748 | 348,114 | 1.04 |
+| 2009 | 285,630 | 288,225 | 0.99 |
+| 2010 | 204,022 | 210,954 | 0.97 |
+| 2011 | 261,221 | 260,635 | 1.00 |
+
+They agree within 4% in every year except 2003 (7%). The share of fire between morning and afternoon
+did not change between the MODIS era and the calibration years in a way that would bias the series.
+
 ## Limits to state in the app and the pitch
 
 - A harmonized MODIS-era count is an estimate. Per year and country it is within about 2% (Argentina)
