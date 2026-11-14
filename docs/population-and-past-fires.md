@@ -49,7 +49,8 @@ Precompute this per grid cell once, so the web app never loads the full rasters.
 |---|---|---|
 | **Valparaíso region, 2–3 Feb 2024** | 138 deaths (final count, Public Prosecutor). 6,974 homes destroyed, 65% of all homes destroyed by wildfires in the region over 10 years. Burned 34% of Viña del Mar and 38% of Valparaíso municipal area. About 9,216 ha (CIGIDEN). | **Central case.** Relatively small area, huge human impact because of nearby population. Directly justifies the exposure analysis. |
 | **Ñuble, Biobío and La Araucanía, Feb 2023** | 25 deaths, about 441,000 ha, 1,987 homes destroyed, 7,038 people affected (Senapred, 19 Feb 2023). | **Contrast.** Far more hectares, fewer deaths. Area burned does not equal impact. |
-| **Chile 2017 season** | 11 deaths, about 6,000 people affected, more than 1,500 homes destroyed, 467,000 ha. | Largest burned area on record. Falls in the MODIS-only era, so it shows why harmonization matters. |
+| **Chile 2017 season** | 11 deaths, about 6,000 people affected, more than 1,500 homes destroyed, 467,000 ha. | Largest burned area on record. Both MODIS and VIIRS (Suomi-NPP, since 2012) observed it, so it is a good check of the harmonization factors on an extreme season. |
+| **Paraná Delta, April 2008** | Fires on the delta islands started on 5 April. The national forest directorate mapped 206,955 ha burned in April (172,981 ha in Entre Ríos, 33,974 ha in Buenos Aires). Smoke covered Buenos Aires from 15 to 20 April. | **MODIS-only case** (before Suomi-NPP). Shows what the harmonized series recovers from the MODIS era. |
 | **Puerto Patriada, Chubut, Jan–Feb 2026** | Started 5 Jan, more than 30,000 ha of native forest, plantations and shrubland, controlled after 39 days. More than 3,000 people evacuated. Preventive evacuation avoided deaths. | **Positive counterexample.** Early warning and timely evacuation saved lives, which is what our tool supports. |
 | **Córdoba 2024, Corrientes 2022** | See `sintesis_desafio_incendios_chile_argentina.md`. | Different fire regimes inside Argentina. |
 | **Chilecito, La Rioja, Jul 2026** | Example used by the challenge author (CONAE) in her audio briefing. | Connects our work to the author's own use case. |
@@ -85,6 +86,9 @@ This connects all four layers (harmonization, calendar, risk, exposure) in one r
 - [Valparaíso 2024, CIGIDEN damage report (Emol)](https://www.emol.com/noticias/Nacional/2024/02/15/1121815/cigiden-informe-danos-incendios-valparaiso.html)
 - [February 2023 fires, daily tolls (Diario Financiero)](https://www.df.cl/empresas/actualidad/minuto-a-minuto-reportan-ocho-incendios-forestales-relevantes-en-cinco)
 - [February 2023 fires and the 2017 precedent (TVN)](https://www.tvn-2.com/mundo/incendios-forestales-chile-no-ceden_1_2034335.html)
+- [Paraná Delta, April 2008: burned area mapping (Dirección de Bosques)](https://www.argentina.gob.ar/sites/default/files/2025/07/2008_-_abril_incendios_delta_del_rio_parana_1.pdf)
+- [Paraná Delta, April 2008: start date (Buenos Aires Chamber of Deputies)](https://intranet.hcdiputados-ba.gov.ar/proyectos/08-09d16260.doc)
+- [Paraná Delta, April 2008: smoke over Buenos Aires (Wikipedia, with press sources)](https://en.wikipedia.org/wiki/2008_Delta_del_Paran%C3%A1_wildfires)
 - [Puerto Patriada controlled after 39 days (ANBariloche)](https://www.anbariloche.com.ar/noticias/2026/02/13/102378-tras-39-dias-de-combate-declaran-controlado-el-incendio-de-puerto-patriada)
 - [Puerto Patriada evacuations (Diario de Cuyo)](https://www.diariodecuyo.com.ar/argentina/incendios-en-chubut-la-investigacion-confirmo-hallazgos-de-combustible-donde-se-inicio-el-fuego-1818865.html)
 - [Puerto Patriada, no fatalities (Cholila Online)](https://cholilaonline.ar/2026/01/el-incendio-en-puerto-patriada-destruyo-viviendas-sin-victimas.html)
