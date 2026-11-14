@@ -9,19 +9,19 @@ status" part of `CLAUDE.md` is older than this file: where they disagree, this f
 
 ## Where the EDA stands
 
-8 of the 9 blocks are done.
+All 9 blocks are done. Each has open ends, listed below the table.
 
 | Block | Topic | Status | Where |
 |---|---|---|---|
 | 0 | Time audit | **Done** | `notebooks/00_time_audit.ipynb`, `docs/findings/00-time-audit.md` |
 | 1 | Integrity and quality | **Done** | `notebooks/01_quality.ipynb`, `docs/findings/01-quality.md` |
-| 2 | Observation effort | Not started | Only the outage days exist (from block 1) |
+| 2 | Observation effort | **Done** | `notebooks/02_observation_effort.ipynb`, `docs/findings/02-observation-effort.md` |
 | 3 | MODIS against VIIRS | **Done** | `notebooks/03_modis_vs_viirs.ipynb`, `docs/findings/03-modis-vs-viirs.md`, `scripts/harmonize.py` |
 | 4 | Burn calendar | **Done, per sensor** | `notebooks/04_calendar.ipynb`, `docs/findings/04-calendar.md` |
 | 5 | Spatial patterns | **Done** | `notebooks/05_spatial.ipynb`, `docs/findings/05-spatial.md` |
 | 6 | Past fire cases | **Done** | `notebooks/06_case_studies.ipynb`, `docs/findings/06-case-studies.md` |
 | 7 | Population (WorldPop) | **Done** | `notebooks/07_population.ipynb`, `docs/findings/07-population.md`, `processed/population/cells.parquet` |
-| 8 | Risk model inputs | **Done as scripts** | `scripts/risk_baseline.py`, `scripts/risk_model.py`, `scripts/risk_weather.py` |
+| 8 | Risk model inputs | **Done** | `notebooks/08_risk_inputs.ipynb`, `docs/findings/08-risk-model.md`, `scripts/risk_baseline.py`, `scripts/risk_model.py`, `scripts/risk_weather.py` |
 
 Open ends inside the done blocks:
 
@@ -35,7 +35,10 @@ Open ends inside the done blocks:
   sources and the check against the risk layer are on the branch `feat/m5-valparaiso-case`, not on `main`.
 - **Block 7:** one population year (2024) for every fire year. The web app does not read
   `population/cells.parquet` yet.
-- **Block 8:** no notebook and no findings file. The model with weather features has not been run.
+- **Block 2:** the test with steady heat sources has 19 sites, all between 22°S and 40°S, and covers
+  night passes only. External cloud data was not used.
+- **Block 8:** the large-fire target was not defined, and `scripts/risk_model.py` and
+  `scripts/risk_weather.py` have no tests. The week in progress has no weather features.
 
 A summary of what the blocks mean for the harmonization, and what to test next:
 `docs/findings/eda-summary-and-harmonization.md`.
@@ -61,7 +64,8 @@ Optional:
 
 | Command | Time (about) | Purpose |
 |---|---|---|
-| `python scripts/risk_weather.py` | 2 h, resumable | NASA POWER weather for 1,466 points. Then run `python scripts/risk_model.py` without `--no-weather`. |
+| `python scripts/risk_weather.py` | 2 h, resumable | NASA POWER weather for 1,466 points. Then run `python scripts/risk_model.py` without `--no-weather` (12 s): average precision 0.563 against 0.555 without weather. |
+| `python scripts/risk_model.py --no-weather --out NASA_Data_Sources/processed/risk_no_weather` | 12 s | Second copy of the model output, needed by notebook 08 to compare with and without weather |
 | `./scripts/download_population.sh` | not measured, 160 MB | WorldPop 2024 for Chile and Argentina, into `External_Data_Sources/WorldPop/`. Needed by notebook 07. No account. |
 
 What each step needs:
@@ -107,6 +111,8 @@ jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/00_time_au
 | `05_spatial.ipynb` | 7 | 35 s | `processed/spatial/cell_regimes.parquet`, `regime_names.csv` |
 | `06_case_studies.ipynb` | 7 | 5 s | `docs/findings/06-valparaiso-2024.png` |
 | `07_population.ipynb` | 7 and the WorldPop download | 40 s | `processed/population/cells.parquet`, `docs/findings/07-population-density-classes.png` |
+| `02_observation_effort.ipynb` | 6 | 15 s | `docs/findings/02-witness-rate.png` |
+| `08_risk_inputs.ipynb` | 9, with and without weather (see Optional) | 5 s | `docs/findings/08-calibration.png` |
 
 To change a notebook you own, edit it in Jupyter, run it top to bottom, and commit it with its
 outputs: the outputs are the evidence.
