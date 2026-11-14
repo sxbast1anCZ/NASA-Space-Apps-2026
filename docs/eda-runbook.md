@@ -8,7 +8,7 @@ status" part of `CLAUDE.md` is older than this file: where they disagree, this f
 
 ## Where the EDA stands
 
-5 of the 9 blocks are done.
+6 of the 9 blocks are done.
 
 | Block | Topic | Status | Where |
 |---|---|---|---|
@@ -18,7 +18,7 @@ status" part of `CLAUDE.md` is older than this file: where they disagree, this f
 | 3 | MODIS against VIIRS | **Done** | `notebooks/03_modis_vs_viirs.ipynb`, `docs/findings/03-modis-vs-viirs.md`, `scripts/harmonize.py` |
 | 4 | Burn calendar | **Done, per sensor** | `notebooks/04_calendar.ipynb`, `docs/findings/04-calendar.md` |
 | 5 | Spatial patterns | Not started | |
-| 6 | Past fire cases | Not started | Block 4.3 has a sanity check only |
+| 6 | Past fire cases | **Done** | `notebooks/06_case_studies.ipynb`, `docs/findings/06-case-studies.md` |
 | 7 | Population (WorldPop) | Not started | WorldPop is not downloaded |
 | 8 | Risk model inputs | **Done as scripts** | `scripts/risk_baseline.py`, `scripts/risk_model.py`, `scripts/risk_weather.py` |
 
@@ -93,6 +93,7 @@ jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/00_time_au
 | `01_quality.ipynb` | 5 | 3 min | The quality files (it is pipeline step 6) |
 | `03_modis_vs_viirs.ipynb` | 7 | 15 s | |
 | `04_calendar.ipynb` | 6 | 30 s | `processed/calendar/monthly_by_region.parquet` |
+| `06_case_studies.ipynb` | 7 | 5 s | `docs/findings/06-valparaiso-2024.png` |
 
 To change a notebook you own, edit it in Jupyter, run it top to bottom, and commit it with its
 outputs: the outputs are the evidence.
