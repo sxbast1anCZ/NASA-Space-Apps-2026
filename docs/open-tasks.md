@@ -1,5 +1,9 @@
 # Open tasks: block 5 (Felipe) and block 7 (Luciano)
 
+> **Both tasks are done and merged** (pull requests 16 and 15). Results: `docs/findings/05-spatial.md`
+> and `docs/findings/07-population.md`. This file is kept as the record of what was asked.
+> For the current state of the EDA, read `docs/eda-runbook.md`.
+
 Written on 2026-11-14 for Felipe, Luciano and their coding agents. Two independent EDA blocks that
 nobody has started. They touch different files, so they can run at the same time.
 

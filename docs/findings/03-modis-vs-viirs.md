@@ -101,6 +101,32 @@ Fitting on one half of the stable overlap and predicting the other half gives a 
 -1.0% (2012-2016 → 2017-2021) and -1.6% (the reverse). On filtered rows the factors are stable
 inside the ten years we can check. Before the filter these errors were -5.0% and +3.6%.
 
+## The level before 2012
+
+The harmonized series is higher before 2012 than after (first noted in
+`docs/findings/eda-summary-and-harmonization.md`). Is that the factors? Compare the same two periods
+in raw MODIS, which needs no factor. Both periods have Terra and Aqua on stable orbits.
+
+| Series | Mean per year, 2003-2011 | Mean per year, 2013-2021 | Ratio |
+|---|---|---|---|
+| MODIS, Terra + Aqua (raw) | 87,415 | 64,654 | 1.35 |
+| Aqua (raw) | 56,588 | 41,561 | 1.36 |
+| Terra (raw) | 30,827 | 23,094 | 1.33 |
+| Harmonized series | 278,896 | 205,869 | 1.35 |
+
+- **The difference is already in the raw MODIS record.** One sensor, looking at both periods, saw
+  1.35 times as many hotspots in the first. The harmonized series has the same ratio, so the factors
+  reproduce what MODIS saw and do not add a step of their own.
+- Per country the two agree as well: Argentina 1.42 raw and 1.42 harmonized; Chile 0.79 and 0.82
+  (Chile had more fire activity in the second period).
+- Not ruled out: the MODIS collection changes in 2018 (6.2 to 6.03). Block 1.5 found no step in the
+  Terra / Aqua ratio there, but that test compares the two MODIS sensors with each other, not with a
+  third reference.
+- This is not a trend claim. Block 4 shows that the sign of a trend depends on the window.
+
+Rows: quality filter of block 1, `burn_year`. Computed on 2026-11-14 from `hotspots_kept.parquet`
+and `cells_daily.parquet`.
+
 ## Limits to state in the app and the pitch
 
 - A harmonized MODIS-era count is an estimate. Per year and country it is within about 2% (Argentina)

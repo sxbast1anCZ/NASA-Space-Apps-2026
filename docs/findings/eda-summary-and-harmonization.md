@@ -3,7 +3,8 @@
 Written on 2026-11-14 after re-running the pipeline of `docs/eda-runbook.md` (steps 5 to 9) and the
 notebooks 00, 01, 03 and 04 on the data downloaded that day. Every number below comes from that run
 or from the findings files it reproduced. Statements marked **(inference)** are interpretation, not
-something the data proves. Blocks 2, 5, 6 and 7 are planned in `docs/eda-plan.md` but not run.
+something the data proves. Blocks 2, 5, 6 and 7 were not run when this was written. Blocks 5, 6 and 7 were merged later
+(`docs/findings/05-spatial.md`, `06-case-studies.md`, `07-population.md`); block 2 is still not run.
 
 ## 1. What was checked
 
@@ -77,6 +78,10 @@ The harmonized series averages **273,833 hotspots a year in 2001-2011 and 203,56
 ratio of 1.35** (`cells_daily.parquet`, calendar years). Raw MODIS is also higher before 2012. There is
 no obvious step at the 2012 switch. The data cannot say whether the higher level is real fire
 activity, the factors, the MODIS collections (6.2, then 6.03, then 61.03) or something else.
+
+**Checked afterwards** (`docs/findings/03-modis-vs-viirs.md`, "The level before 2012"): raw MODIS shows
+the same ratio, 1.35, between 2003-2011 and 2013-2021, with Terra and Aqua both flying on stable orbits.
+The factors do not create the difference. The MODIS collections are still not ruled out.
 
 Within one sensor and one stable period (block 4.7):
 

@@ -1,7 +1,8 @@
 # EDA runbook: how to run everything, and where it stands
 
-For team members and their coding agents. Last checked on 2026-11-14 on `main` at `f30a117`, with
-Python 3.12 on macOS. Every command here was run on that commit.
+For team members and their coding agents. Last checked on 2026-11-14 on `main` at `c0f35d0`, with
+Python 3.12 on macOS. Every command here was run on `main` that day, except notebook 07, which was
+run by its author (it needs the WorldPop rasters).
 
 Read this before `docs/eda-plan.md` (the plan) and `docs/findings/` (the results). The "Project
 status" part of `CLAUDE.md` is older than this file: where they disagree, this file is right.
@@ -28,7 +29,16 @@ Open ends inside the done blocks:
   mapping were not done.
 - **Block 4:** it ran before the harmonized dataset existed, so every statistic is per sensor. Its
   section "When C2 exists" lists the three re-runs that are still pending.
+- **Block 5:** two of the four fire regimes are shaped by one season (2016/17). The recommendation of
+  0.5° as the smallest cell for an anomaly calendar is not applied in the web app.
+- **Block 6:** a case is a box or a set of regions, not an event. The Valparaíso timeline with
+  sources and the check against the risk layer are on the branch `feat/m5-valparaiso-case`, not on `main`.
+- **Block 7:** one population year (2024) for every fire year. The web app does not read
+  `population/cells.parquet` yet.
 - **Block 8:** no notebook and no findings file. The model with weather features has not been run.
+
+A summary of what the blocks mean for the harmonization, and what to test next:
+`docs/findings/eda-summary-and-harmonization.md`.
 
 ## Pipeline, in order
 
@@ -52,7 +62,7 @@ Optional:
 | Command | Time (about) | Purpose |
 |---|---|---|
 | `python scripts/risk_weather.py` | 2 h, resumable | NASA POWER weather for 1,466 points. Then run `python scripts/risk_model.py` without `--no-weather`. |
-| `./scripts/download_population.sh` | not measured | WorldPop, for block 7 |
+| `./scripts/download_population.sh` | not measured, 160 MB | WorldPop 2024 for Chile and Argentina, into `External_Data_Sources/WorldPop/`. Needed by notebook 07. No account. |
 
 What each step needs:
 
@@ -77,7 +87,8 @@ If your run gives different numbers, stop and find out why before analysing anyt
 | 9 | `Model beats baseline on 2023-2025: YES` (average precision 0.555 against 0.510) |
 
 The download date changes the first two rows: the recent months are near-real-time data that FIRMS
-keeps revising. The numbers above are for data downloaded on 2026-11-14.
+keeps revising. The numbers above are for data downloaded on 2026-11-14. A download later the same
+day gave 8,042,448 rows and 7,000,575 kept (68 and 55 more); `cells_daily.parquet` still had 1,020,967 rows.
 
 ## Running the analysis notebooks
 
@@ -93,7 +104,9 @@ jupyter nbconvert --to notebook --execute --output-dir /tmp notebooks/00_time_au
 | `01_quality.ipynb` | 5 | 3 min | The quality files (it is pipeline step 6) |
 | `03_modis_vs_viirs.ipynb` | 7 | 15 s | |
 | `04_calendar.ipynb` | 6 | 30 s | `processed/calendar/monthly_by_region.parquet` |
+| `05_spatial.ipynb` | 7 | 35 s | `processed/spatial/cell_regimes.parquet`, `regime_names.csv` |
 | `06_case_studies.ipynb` | 7 | 5 s | `docs/findings/06-valparaiso-2024.png` |
+| `07_population.ipynb` | 7 and the WorldPop download | 40 s | `processed/population/cells.parquet`, `docs/findings/07-population-density-classes.png` |
 
 To change a notebook you own, edit it in Jupyter, run it top to bottom, and commit it with its
 outputs: the outputs are the evidence.
@@ -104,6 +117,8 @@ outputs: the outputs are the evidence.
 |---|---|---|
 | Any analysis of fire activity | `processed/harmonized/hotspots_kept.parquet` | One row per hotspot that passes the quality filter, with the region corrected. Same columns as the hotspot table. |
 | Harmonized counts (MODIS and VIIRS on one scale) | `processed/harmonized/cells_daily.parquet` | Sum `hotspots_harmonized`. Never count rows: a cell on a region border has one row per region. |
+| When each place burns | `processed/spatial/cell_regimes.parquet` | One row per cell with at least 100 hotspots in 2012-2025: fire regime (0 to 3), peak month, hotspots per km² per year. Names in `regime_names.csv`. |
+| People living in a cell | `processed/population/cells.parquet` | `population_2024` and `people_per_km2` per 0.25° cell. Chile is rescaled to its 2024 census. |
 | Data quality questions, or rows the filter drops | `processed/hotspots/` joined with `processed/quality/quality_flags.parquet` | Join on `satellite, acq_datetime, latitude, longitude`. Check that no row is left without a flag. |
 | Risk per cell and week | `processed/risk/cells_weekly.parquet` | `probability` is the model where it was tested out of sample, the baseline elsewhere. |
 
