@@ -64,7 +64,7 @@ If a decision changes, change it here and in the findings file of its block, in 
 | Fire regimes | 4, named by timing: winter-spring, January pulse, late summer, December pulse. Only the first and third are stable calendars | 5 |
 | Cell density | Per km², with `(0.25 × 111.32)² × cos(latitude)` | 5 |
 
-The web app does not follow the anomaly rows yet: see A3 and A4 in `docs/eda-closing-plan.md`.
+The web app follows these rows since pull request 24. Its default reference is 2013 to the last complete year; `reference=all` uses the full record. A partial month gets no ratio.
 
 ## Observation
 
@@ -96,6 +96,5 @@ The web app does not follow the anomaly rows yet: see A3 and A4 in `docs/eda-clo
 
 | Question | Options | See |
 |---|---|---|
-| Reference years for "compared with the median" | Last 10 complete years, or the full record | A4 in `docs/eda-closing-plan.md` |
 | How processed data reaches other machines | Release asset, shared drive, or rebuild | Section 3 of `docs/eda-closing-plan.md` |
 | Definition of a large fire | Needs events | B1 in `docs/eda-closing-plan.md` |

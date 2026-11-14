@@ -78,7 +78,7 @@ lane at a time.
 |---|---|---|---|
 | T1 Merge pull request 21 | docs | 20 min | high |
 | T2 Fill the Suomi-NPP outages | scripts | done | merged, pull request 23 |
-| T3 One anomaly definition in the app | app | 1 h | high |
+| T3 One anomaly definition in the app | app | done | merged, pull request 24 |
 | T4 Make notebook 06 run on every machine | notebooks | done | merged, pull request 22 |
 | T5 Tests for the risk scripts | scripts | 45 min | medium |
 | T6 Re-run block 4 on harmonized data, fix notebooks 01 and 04 | notebooks | 1.25 h | medium |
@@ -200,7 +200,7 @@ Three views. The EDA settles this much (details in `docs/eda-closing-plan.md`, s
 
 | View | State | What is known |
 |---|---|---|
-| Burn calendar | On `main` | Needs T2 and T3 to match the EDA |
+| Burn calendar | On `main` | Matches the EDA since pull requests 23 and 24 (outages filled, one anomaly definition, reference from 2013 by default) |
 | Current situation | Not built | Hotspots of the last passes (afternoon about 15:00 to 16:30, night about 02:00 to 04:00 civil time). `scripts/download_firms_api.sh` already fetches them and needs a schedule. It confirms and maps a fire; in the one case with an hour (Valparaíso 2024) the first detection came 2 hours 16 minutes after the fire started. T8 would let it count fires |
 | Where activity is most likely next | Weekly outlook on `main`; next-day not built | Weekly: average precision 0.563 against 0.510 for the historical rate. Day to day: a cell with fire today has fire tomorrow 33% of the time (base rate 2.6%), and 65% of tomorrow's fire cells are in or next to today's. A next-day view will mostly show today's fires and their surroundings. Tomorrow's weather needs a forecast source: NASA POWER is three days behind |
 
