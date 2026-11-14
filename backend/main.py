@@ -195,11 +195,11 @@ def hotspots_csv(
     Same rows as the calendar: only hotspots that pass the quality filter of block 1.
     """
     con = db()
-    source = DATA / "hotspots"
-    flags = DATA / "quality" / "quality_flags.parquet"
-    if not source.is_dir() or not flags.exists():
-        raise HTTPException(503, "Hotspot table or quality flags not found. Run scripts/build_hotspots.py "
-                                 "and notebooks/01_quality.ipynb.")
+    # Written by scripts/harmonize.py: the same rows the calendar counts, already checked and with
+    # the region corrected, so this endpoint has nothing to filter or validate.
+    source = DATA / "harmonized" / "hotspots_kept.parquet"
+    if not source.exists():
+        raise HTTPException(503, f"{source} not found. Run scripts/harmonize.py.")
     where, params = area_filter(west, south, east, north, country, admin1, lat="latitude", lon="longitude", size=0)
     if start:
         where += " AND burn_date >= ?"
@@ -207,12 +207,7 @@ def hotspots_csv(
     if end:
         where += " AND burn_date <= ?"
         params.append(end)
-    table = f"""(
-        SELECT t.* REPLACE (coalesce(q.admin1_fixed, t.admin1) AS admin1)
-        FROM read_parquet('{source}/*/*.parquet', hive_partitioning=true) t
-        JOIN read_parquet('{flags}') q USING (satellite, acq_datetime, latitude, longitude)
-        WHERE q.keep
-    )"""
+    table = f"read_parquet('{source}')"
 
     n = con.execute(f"SELECT count(*) FROM {table} WHERE {where}", params).fetchone()[0]
     if n > CSV_ROW_LIMIT:

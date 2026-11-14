@@ -1,4 +1,4 @@
-"""API tests on a tiny synthetic dataset with the real schemas (contracts C1 and C2)."""
+"""API tests on a tiny synthetic dataset with the real schemas (outputs of scripts/harmonize.py)."""
 
 import sys
 from pathlib import Path
@@ -37,26 +37,15 @@ SELECT latitude::DOUBLE AS latitude, longitude::DOUBLE AS longitude, DATE '2024-
        TIMESTAMP '2024-02-02 15:30:00' AS local_wall_time, 'America/Santiago' AS tz_name,
        country, 'Region' AS admin1
 FROM (VALUES (-33.10, -71.60, 0, 'Chile'), (-33.12, -71.61, NULL, 'Chile'),
-             (-33.11, -71.62, 2, 'Chile'), (-27.00, -60.00, 0, 'Argentina'))
+             (-27.00, -60.00, 0, 'Argentina'))
      t(latitude, longitude, fire_type, country)
 """
-
-# Quality flags of block 1: the third hotspot is a static source and is not kept.
-FLAGS = f"""
-SELECT satellite, acq_datetime, latitude, longitude, latitude <> -33.11 AS keep,
-       CAST(NULL AS VARCHAR) AS admin1_fixed
-FROM ({HOTSPOTS})
-"""
-
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     (tmp_path / "harmonized").mkdir()
-    (tmp_path / "hotspots" / "year=2024").mkdir(parents=True)
     duckdb.sql(f"COPY ({CELLS}) TO '{tmp_path}/harmonized/cells_daily.parquet'")
-    duckdb.sql(f"COPY ({HOTSPOTS}) TO '{tmp_path}/hotspots/year=2024/part.parquet'")
-    (tmp_path / "quality").mkdir()
-    duckdb.sql(f"COPY ({FLAGS}) TO '{tmp_path}/quality/quality_flags.parquet'")
+    duckdb.sql(f"COPY ({HOTSPOTS}) TO '{tmp_path}/harmonized/hotspots_kept.parquet'")
     monkeypatch.setattr(main, "DATA", tmp_path)
     monkeypatch.setattr(main, "_con", None)
     return TestClient(main.app)
@@ -118,8 +107,14 @@ def test_csv_has_the_hotspots_of_the_search(client):
     r = client.get("/api/hotspots.csv", params={**CHILE_BOX, "from": "2024-02-01", "to": "2024-02-29"})
     lines = r.text.strip().splitlines()
     assert lines[0].split(",")[:4] == ["latitude", "longitude", "acq_date", "acq_time"]
-    assert len(lines) == 3                                   # unkept hotspot and Argentine point left out
+    assert len(lines) == 3                                   # the Argentine point is outside the box
     assert r.headers["x-hotspot-count"] == "2"
+
+
+def test_csv_needs_the_kept_hotspots_file(client, tmp_path):
+    (tmp_path / "harmonized" / "hotspots_kept.parquet").unlink()
+    r = client.get("/api/hotspots.csv", params=CHILE_BOX)
+    assert r.status_code == 503 and "harmonize.py" in r.json()["detail"]
 
 
 def test_csv_refuses_searches_that_are_too_large(client, monkeypatch):

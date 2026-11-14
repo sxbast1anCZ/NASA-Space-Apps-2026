@@ -7,6 +7,7 @@ no Easter Island or Malvinas/Falklands (docs/findings/01-quality.md). Calibratin
 rows matters: the filter removes more VIIRS than MODIS.
 
 Output: NASA_Data_Sources/processed/harmonized/
+    hotspots_kept.parquet the hotspots that pass the filter, one row each, region corrected
     cells_daily.parquet   one row per 0.25° cell, burn_date, region and sensor with fire
     factors.csv           the MODIS -> VIIRS-equivalent factors that were applied
 
@@ -29,6 +30,8 @@ from pathlib import Path
 
 import duckdb
 
+from build_hotspots import fix_mojibake
+
 ROOT = Path(__file__).resolve().parents[1]
 TABLE = ROOT / "NASA_Data_Sources" / "processed" / "hotspots"
 FLAGS = ROOT / "NASA_Data_Sources" / "processed" / "quality" / "quality_flags.parquet"
@@ -43,25 +46,56 @@ SHRINK_K = 200                     # MODIS detections behind the country prior
 KEY = "satellite, acq_datetime, latitude, longitude"  # unique per hotspot, shared with the flags
 
 
-def main() -> None:
-    con = duckdb.connect()
-    con.execute("SET TimeZone='UTC'")
-    if not FLAGS.exists():
-        raise SystemExit(f"{FLAGS} not found. Run notebooks/01_quality.ipynb to create it.")
-    table = f"read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)"
+def build_kept(con: duckdb.DuckDBPyConnection, table: str, flags: Path, out: Path) -> int:
+    """Write the hotspots that pass the quality filter, with the region corrected, to `out`.
+
+    Every consumer (the harmonization, the CSV of the web app, notebook 03) reads this file, so the
+    filter, the checks and the region names live in one place.
+
+    Region: rows the polygons missed take `admin1_fixed` (nearest region within 5 km, block 1.8),
+    but only when its name, with the encoding repaired as in build_hotspots.py, is a region of the
+    row's own country. Otherwise the row stays without region.
+    """
+    if not flags.exists():
+        raise SystemExit(f"{flags} not found. Run notebooks/01_quality.ipynb to create it.")
     unflagged = con.execute(f"""
-        SELECT count(*) FROM {table} t ANTI JOIN read_parquet('{FLAGS}') q USING ({KEY})
+        SELECT count(*) FROM {table} t ANTI JOIN read_parquet('{flags}') q USING ({KEY})
     """).fetchone()[0]
     if unflagged:
         raise SystemExit(f"{unflagged:,} hotspots have no quality flag: the flags are older than the "
                          "table. Re-run notebooks/01_quality.ipynb.")
-    # Rows the polygons missed get the nearest region within 5 km (admin1_fixed, block 1.8).
+    names = con.execute(f"""
+        SELECT DISTINCT admin1_fixed FROM read_parquet('{flags}') WHERE admin1_fixed IS NOT NULL
+    """).fetchall()
+    con.execute("CREATE OR REPLACE TABLE region_names (raw VARCHAR, name VARCHAR)")
+    if names:
+        con.executemany("INSERT INTO region_names VALUES (?, ?)", [(n, fix_mojibake(n)) for (n,) in names])
+    out.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"""
+        COPY (
+            WITH pairs AS (SELECT DISTINCT country, admin1 FROM {table} WHERE admin1 IS NOT NULL)
+            SELECT t.* REPLACE (coalesce(t.admin1, p.admin1) AS admin1)
+            FROM {table} t JOIN read_parquet('{flags}') q USING ({KEY})
+            LEFT JOIN region_names n ON n.raw = q.admin1_fixed
+            LEFT JOIN pairs p ON p.country = t.country AND p.admin1 = n.name
+            WHERE q.keep
+        ) TO '{out}' (FORMAT parquet, COMPRESSION zstd)
+    """)
+    return con.execute(f"SELECT count(*) FROM read_parquet('{out}')").fetchone()[0]
+
+
+def main() -> None:
+    con = duckdb.connect()
+    con.execute("SET TimeZone='UTC'")
+    table = f"read_parquet('{TABLE}/*/*.parquet', hive_partitioning=true)"
+    OUT.mkdir(parents=True, exist_ok=True)
+    n_kept = build_kept(con, table, FLAGS, OUT / "hotspots_kept.parquet")
+    print(f"{n_kept:,} hotspots pass the quality filter")
     con.execute(f"""
         CREATE TABLE h AS
-        SELECT t.burn_date, t.burn_year, t.burn_month, t.pass_slot, t.latitude, t.longitude, t.country,
-               coalesce(q.admin1_fixed, t.admin1) AS admin1, t.instrument, t.satellite, t.processing
-        FROM {table} t JOIN read_parquet('{FLAGS}') q USING ({KEY})
-        WHERE q.keep
+        SELECT burn_date, burn_year, burn_month, pass_slot, latitude, longitude, country, admin1,
+               instrument, satellite, processing
+        FROM read_parquet('{OUT}/hotspots_kept.parquet')
     """)
 
     # Factors on the months where both sensors observed.
@@ -119,7 +153,6 @@ def main() -> None:
         GROUP BY ALL
     """)
 
-    OUT.mkdir(parents=True, exist_ok=True)
     con.execute(f"COPY factors TO '{OUT}/factors.csv' (HEADER)")
     con.execute(f"COPY (SELECT * FROM cells ORDER BY burn_date, cell_lat, cell_lon) "
                 f"TO '{OUT}/cells_daily.parquet' (FORMAT parquet, COMPRESSION zstd)")

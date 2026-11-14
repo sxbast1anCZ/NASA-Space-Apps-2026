@@ -20,14 +20,22 @@ block 3. `burn_date` is the day key and Suomi-NPP the VIIRS reference.
 Run `notebooks/01_quality.ipynb` once to create the quality flags, then `python scripts/harmonize.py`
 (a few seconds). It writes, in `NASA_Data_Sources/processed/harmonized/`:
 
-- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,020,995 rows, 3 MB. The harmonized
+- `hotspots_kept.parquet`: the 7,000,520 hotspots that pass the filter, one row each (152 MB). The
+  CSV download of the web app and notebook 03 read this file, so the filter, its checks and the
+  region names live in one place.
+- `cells_daily.parquet` (contract C2 in `docs/work-split.md`): 1,020,967 rows, 3 MB. The harmonized
   count of any area and period is the **sum of `hotspots_harmonized`**. A cell that crosses a region
   border has one row per region: always sum, never count rows.
-- `factors.csv`: the 982 factors per region, month and pass. Day pass: 0.9 to 4.1, median 2.8
+- `factors.csv`: the 949 factors per region, month and pass. Day pass: 0.9 to 4.1, median 2.8
   (Argentina) and 2.7 (Chile). Night pass: 3.8 to 19.5, median 7.2 and 8.4.
 - `validation_yearly.csv`.
 
 The script stops if the flags file is missing or older than the hotspot table.
+
+Region of the rows the polygons missed: they take `admin1_fixed` from block 1 only when that name,
+with its encoding repaired as in `scripts/build_hotspots.py`, is a region of the row's own country.
+This keeps one spelling per region (40 regions: 24 in Argentina, 16 in Chile) and no pair such as
+Chile / Neuquén. 4 kept rows stay without region.
 
 One sensor per period, so nothing is counted twice: MODIS before 2012-02-01, Suomi-NPP until
 2026-10-31, NOAA-20 after. Factor: `(V + 200 × country_factor) / (M + 200)`, with V and M the
