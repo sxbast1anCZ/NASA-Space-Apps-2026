@@ -41,7 +41,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from risk_baseline import CELL_DEG, HOTSPOTS, N_WEEKS, load_detections, week_index, week_start
+from risk_baseline import CELL_DEG, HOTSPOTS, N_WEEKS, QUALITY, load_detections, week_index, week_start
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "NASA_Data_Sources" / "processed" / "weather"
@@ -64,8 +64,8 @@ SLEEP_S = 1.0                            # pause between requests, to be polite 
 
 # ---------------------------------------------------------------- points
 
-def fire_cells(hotspots: Path) -> pd.DataFrame:
-    df = load_detections(hotspots, drop_low=False)
+def fire_cells(hotspots: Path, quality: Path = QUALITY) -> pd.DataFrame:
+    df = load_detections(hotspots, quality)
     cells = pd.DataFrame({
         "cell_lat": np.floor(df["latitude"] / CELL_DEG) * CELL_DEG,
         "cell_lon": np.floor(df["longitude"] / CELL_DEG) * CELL_DEG,
@@ -210,12 +210,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--hotspots", type=Path, default=HOTSPOTS)
     ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument("--quality", type=Path, default=QUALITY, help="folder with the block 1 quality files")
     ap.add_argument("--limit", type=int, default=None, help="download at most N new points")
     ap.add_argument("--end", default=None, help="last date YYYY-MM-DD (default: 3 days ago, POWER latency)")
     args = ap.parse_args()
 
     end = pd.Timestamp(args.end) if args.end else pd.Timestamp.now(tz="UTC").tz_localize(None).normalize() - pd.Timedelta(days=3)
-    cells = fire_cells(args.hotspots)
+    cells = fire_cells(args.hotspots, args.quality)
     points = cells[["point_lat", "point_lon"]].drop_duplicates().reset_index(drop=True)
     print(f"Fire cells: {len(cells):,} -> weather points: {len(points):,} | days {FIRST_DATE.date()} to {end.date()}")
 

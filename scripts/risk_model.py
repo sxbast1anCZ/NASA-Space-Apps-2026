@@ -5,6 +5,7 @@ on later years it never saw; if it does not, the app keeps the baseline (docs/wo
 
 Inputs:
     NASA_Data_Sources/processed/hotspots/                    target and fire history (VIIRS)
+    NASA_Data_Sources/processed/quality/                      block 1 filter and outages
     NASA_Data_Sources/processed/weather/weekly.parquet        from scripts/risk_weather.py
     NASA_Data_Sources/processed/weather/cell_to_point.parquet
 
@@ -44,8 +45,9 @@ import numpy as np
 import pandas as pd
 
 from risk_baseline import (
-    CELL_DEG, HOTSPOTS, N_WEEKS, OUT, baseline_for_year, build_panel, eligible_cells, evaluate,
-    load_detections, observed_weeks, select_target_rows, week_end, week_start,
+    CELL_DEG, HOTSPOTS, N_WEEKS, OUT, QUALITY, baseline_for_year, build_panel, eligible_cells, evaluate,
+    load_detections, load_outages, observed_weeks, select_target_rows, target_outage_days, week_end,
+    week_start,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -150,6 +152,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--hotspots", type=Path, default=HOTSPOTS)
     ap.add_argument("--weather", type=Path, default=WEATHER)
+    ap.add_argument("--quality", type=Path, default=QUALITY, help="folder with the block 1 quality files")
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--no-weather", action="store_true")
     ap.add_argument("--train-until", type=int, default=2020)
@@ -161,17 +164,18 @@ def main() -> None:
     ap.add_argument("--horizon-weeks", type=int, default=8)
     args = ap.parse_args()
 
-    df = load_detections(args.hotspots, drop_low=False)
+    df = load_detections(args.hotspots, args.quality)
     df["cell_lat"] = np.floor(df["latitude"] / CELL_DEG) * CELL_DEG
     df["cell_lon"] = np.floor(df["longitude"] / CELL_DEG) * CELL_DEG
-    rows, first_day, _, last_day = select_target_rows(df, "reference")
+    rows, first_day, switch, last_day = select_target_rows(df, "reference")
     horizon_end = last_day + pd.Timedelta(days=7 * args.horizon_weeks)
     years = np.arange(first_day.year, horizon_end.year + 1)
     cells = (df[["cell_lat", "cell_lon"]].drop_duplicates()
              .sort_values(["cell_lat", "cell_lon"]).reset_index(drop=True))
     cells.index.name = "cell_id"
     fire = build_panel(rows, years, cells)
-    avail = observed_weeks(years, first_day, last_day)
+    avail = observed_weeks(years, first_day, last_day,
+                           target_outage_days(load_outages(args.quality), "reference", switch))
     hist = history_features(fire, avail, neighbour_ids(cells))
     table = assemble(years, cells, fire, avail, hist, last_day, horizon_end, args)
 
