@@ -9,10 +9,11 @@ One sensor per period, so nothing is counted twice:
     2012-02-01 .. 2026-10-31  VIIRS Suomi-NPP, unchanged
     burn_date >= 2026-11-01   VIIRS NOAA-20, unchanged (Suomi-NPP stopped on 2026-11-02)
 
-Method v0: factor = Suomi-NPP count / MODIS count over the calibration years, per country and
-calendar month. A second set of factors uses Terra rows only, for the period before Aqua.
-shortcut: country x month factors with no regional detail and NOAA-20 taken as equal to
-Suomi-NPP; replace with the method chosen in block 3 of docs/eda-plan.md.
+Method (chosen in block 3, docs/findings/03-modis-vs-viirs.md): factor = Suomi-NPP count / MODIS
+count over the calibration years, per region and calendar month, shrunk towards the factor of the
+country and month: (V + K * country_factor) / (M + K). Rows without a region use the country factor.
+A second set of factors uses Terra rows only, for the period before Aqua.
+NOAA-20 needs no factor: its counts are within 7% of Suomi-NPP every year from 2019 to 2025.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ VIIRS_START = "2012-02-01"
 NOAA20_START = "2026-11-01"
 AQUA_START = "2002-07-04"
 CELL = 4                           # cells per degree: 0.25°
+SHRINK_K = 200                     # MODIS detections behind the country prior
 # Vegetation fires only. NRT rows have no fire_type yet, so they are kept.
 FILTER = "(fire_type = 0 OR fire_type IS NULL)"
 
@@ -42,22 +44,34 @@ def main() -> None:
         WHERE {FILTER}
     """)
 
-    # Factors on the months where both sensors observed, per country and calendar month.
+    # Factors on the months where both sensors observed.
     y0, y1 = CALIBRATION_YEARS
+    overlap = f"burn_year BETWEEN {y0} AND {y1} AND burn_date >= DATE '{VIIRS_START}'"
+    counts = """count(*) FILTER (WHERE satellite = 'Suomi-NPP') AS viirs,
+                count(*) FILTER (WHERE instrument = 'MODIS') AS modis,
+                count(*) FILTER (WHERE satellite = 'Terra') AS terra"""
+    con.execute(f"""
+        CREATE TABLE country_factors AS
+        SELECT country, burn_month, viirs / modis AS cf_terra_aqua, viirs / terra AS cf_terra_only
+        FROM (SELECT country, burn_month, {counts} FROM h WHERE {overlap} GROUP BY ALL)
+    """)
     con.execute(f"""
         CREATE TABLE factors AS
-        WITH overlap AS (
-            SELECT country, burn_month,
-                   count(*) FILTER (WHERE satellite = 'Suomi-NPP') AS viirs,
-                   count(*) FILTER (WHERE instrument = 'MODIS') AS modis,
-                   count(*) FILTER (WHERE satellite = 'Terra') AS terra
-            FROM h
-            WHERE burn_year BETWEEN {y0} AND {y1} AND burn_date >= DATE '{VIIRS_START}'
-            GROUP BY ALL
-        )
-        SELECT country, burn_month, viirs, modis, terra,
-               viirs / modis AS factor_terra_aqua, viirs / terra AS factor_terra_only
-        FROM overlap ORDER BY ALL
+        SELECT country, admin1, burn_month, viirs, modis, terra,
+               (viirs + {SHRINK_K} * cf_terra_aqua) / (modis + {SHRINK_K}) AS factor_terra_aqua,
+               (viirs + {SHRINK_K} * cf_terra_only) / (terra + {SHRINK_K}) AS factor_terra_only
+        FROM (SELECT country, admin1, burn_month, {counts} FROM h
+              WHERE {overlap} AND admin1 IS NOT NULL GROUP BY ALL)
+        JOIN country_factors USING (country, burn_month)
+        ORDER BY ALL
+    """)
+    # One factor per hotspot: its region and month if known, otherwise its country and month.
+    con.execute("""
+        CREATE VIEW hf AS
+        SELECT h.*, coalesce(f.factor_terra_aqua, c.cf_terra_aqua) AS factor_terra_aqua,
+               coalesce(f.factor_terra_only, c.cf_terra_only) AS factor_terra_only
+        FROM h JOIN country_factors c USING (country, burn_month)
+        LEFT JOIN factors f USING (country, admin1, burn_month)
     """)
 
     con.execute(f"""
@@ -67,7 +81,7 @@ def main() -> None:
                 WHEN burn_date < DATE '{VIIRS_START}' THEN instrument = 'MODIS'
                 WHEN burn_date < DATE '{NOAA20_START}' THEN satellite = 'Suomi-NPP'
                 ELSE satellite = 'NOAA-20' END AS in_series
-            FROM h
+            FROM hf
         )
         SELECT s.burn_date,
                floor(s.latitude * {CELL}) / {CELL} AS cell_lat,
@@ -76,10 +90,10 @@ def main() -> None:
                s.instrument AS sensor,
                count(*) AS hotspots_raw,
                sum(CASE WHEN s.instrument = 'VIIRS' THEN 1.0
-                        WHEN s.burn_date < DATE '{AQUA_START}' THEN f.factor_terra_only
-                        ELSE f.factor_terra_aqua END) AS hotspots_harmonized,
+                        WHEN s.burn_date < DATE '{AQUA_START}' THEN s.factor_terra_only
+                        ELSE s.factor_terra_aqua END) AS hotspots_harmonized,
                bool_or(s.processing = 'NRT') AS provisional
-        FROM series s JOIN factors f USING (country, burn_month)
+        FROM series s
         WHERE s.in_series
         GROUP BY ALL
     """)
@@ -99,7 +113,11 @@ def main() -> None:
     assert viirs_raw == viirs_harm, "VIIRS counts must not change"
     assert con.execute("SELECT count(*) FROM cells WHERE hotspots_harmonized IS NULL").fetchone()[0] == 0
 
-    print(con.execute("SELECT * FROM factors").df().round(2).to_string(index=False))
+    print(con.execute("""
+        SELECT country, count(*) AS region_months, round(min(factor_terra_aqua), 2) AS min,
+               round(median(factor_terra_aqua), 2) AS median, round(max(factor_terra_aqua), 2) AS max
+        FROM factors GROUP BY 1 ORDER BY 1
+    """).df().to_string(index=False))
     print(f"\n{con.execute('SELECT count(*) FROM cells').fetchone()[0]:,} cell-day rows "
           f"| raw {raw:,.0f} -> harmonized {harm:,.0f} hotspots")
     validate(con)
@@ -112,8 +130,8 @@ def validate(con: duckdb.DuckDBPyConnection) -> None:
         SELECT country, burn_year AS year, burn_month AS month,
                count(*) FILTER (WHERE satellite = 'Suomi-NPP') AS viirs,
                count(*) FILTER (WHERE instrument = 'MODIS') AS modis_raw,
-               sum(f.factor_terra_aqua) FILTER (WHERE instrument = 'MODIS') AS modis_scaled
-        FROM h JOIN factors f USING (country, burn_month)
+               sum(factor_terra_aqua) FILTER (WHERE instrument = 'MODIS') AS modis_scaled
+        FROM hf
         WHERE burn_date >= DATE '{VIIRS_START}' AND burn_year <= 2025
         GROUP BY ALL ORDER BY ALL
     """).df()
@@ -146,11 +164,11 @@ def validate(con: duckdb.DuckDBPyConnection) -> None:
     series.harmonized.plot(ax=ax, color="#D55E00", lw=2.5, label="Harmonized series (VIIRS-equivalent)")
     ax.axvline(2012, color="k", lw=0.8, ls=":")
     ax.text(2012.1, ax.get_ylim()[1] * 0.95, "VIIRS starts", fontsize=9, va="top")
-    ax.set(title="Hotspots per year, Chile and Argentina: before and after harmonization (v0)",
+    ax.set(title="Hotspots per year, Chile and Argentina: before and after harmonization",
            xlabel="burn year", ylabel="hotspots")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(ROOT / "docs" / "findings" / "03-harmonization-v0.png", dpi=130)
+    fig.savefig(ROOT / "docs" / "findings" / "03-harmonization.png", dpi=130)
 
 
 if __name__ == "__main__":
