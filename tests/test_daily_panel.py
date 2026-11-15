@@ -222,7 +222,8 @@ def test_baselines_and_new_cell_in_the_frame():
 
 # ---------------------------------------------------------------- end to end on a tiny made-up table
 
-def test_main_writes_the_contract_files(tmp_path):
+def tiny_inputs(tmp_path):
+    """A made-up kept-hotspot table (Suomi-NPP, 2012 to March 2023) and an outage list."""
     rng = np.random.default_rng(3)
     days = pd.date_range("2012-01-20", "2023-03-10")
     cells = square(3)
@@ -240,7 +241,11 @@ def test_main_writes_the_contract_files(tmp_path):
     quality.mkdir()
     pd.DataFrame({"satellite": ["Suomi-NPP", "Terra"], "start": ["2016-03-01", "2016-05-01"],
                   "end": ["2016-03-04", "2016-05-02"], "days": [4, 2]}).to_csv(quality / "outage_days.csv", index=False)
+    return kept, quality, pd.Timestamp(max(r["burn_date"] for r in rows))
 
+
+def test_main_writes_the_contract_files(tmp_path):
+    kept, quality, last = tiny_inputs(tmp_path)
     dp.main(["--kept", str(kept), "--quality", str(quality), "--out", str(tmp_path)])
 
     panel = pd.read_parquet(tmp_path / "daily" / "panel.parquet")
@@ -249,13 +254,15 @@ def test_main_writes_the_contract_files(tmp_path):
     assert dates.min() == pd.Timestamp("2014-01-01")
     assert not dates.between("2016-03-01", "2016-03-04").any()           # Suomi-NPP outage: not predicted
     assert dates.between("2016-05-01", "2016-05-02").any()               # Terra outage: irrelevant
-    assert set(panel["split"]) == {"train", "tune", "test", "gap"}
+    assert set(panel["split"]) == {"train", "tune", "test", "gap", "live"}
     assert set(panel["segment"]) == {"CL-PV", "CL-OI"}
 
-    live = pd.read_parquet(tmp_path / "daily" / "live.parquet")
-    last = max(r["burn_date"] for r in rows)
-    assert (pd.to_datetime(live["burn_date"]) == pd.Timestamp(last)).all()   # the day after the last complete day
-    assert live["fire"].isna().all() and (live["split"] == "live").all()
+    live = panel[panel["split"] == "live"]                               # in the panel, as daily_train.py reads it
+    assert len(live) and (dates[live.index] == last).all()               # the day after the last complete day
+    assert live["fire"].isna().all() and panel.loc[panel["split"] != "live", "fire"].notna().all()
+    assert not (tmp_path / "daily" / "live.parquet").exists()            # one contract: no separate file
+    labelled = pd.read_parquet(tmp_path / "daily" / "panel.parquet", filters=[("split", "in", ["tune", "test"])])
+    assert labelled["fire"].isin([0, 1]).all()                           # what daily_eval.py reads has a target
 
     app = pd.read_parquet(tmp_path / "risk" / "cells_daily.parquet")
     assert list(app.columns) == dp.CONTRACT
@@ -263,3 +270,27 @@ def test_main_writes_the_contract_files(tmp_path):
     assert app_dates.min() == pd.Timestamp("2023-01-01") and app_dates.max() == pd.Timestamp(last)
     assert (app["probability"] == app["baseline_probability"]).all()
     assert (tmp_path / "daily" / "panel_summary.json").exists()
+
+
+# ---------------------------------------------------------------- producer, then consumer
+
+def test_training_keeps_every_app_date_of_the_panel(tmp_path):
+    """daily_panel.py, then daily_train.py: the model's cells_daily.parquet must cover the same days
+    as the baseline one, including the live day and the `gap` days of early January 2023."""
+    dt = pytest.importorskip("daily_train", reason="needs scripts/daily_train.py (pull request 31)")
+    pytest.importorskip("lightgbm")
+    kept, quality, last = tiny_inputs(tmp_path)
+    dp.main(["--kept", str(kept), "--quality", str(quality), "--out", str(tmp_path)])
+    app_path = tmp_path / "risk" / "cells_daily.parquet"
+    baseline = pd.read_parquet(app_path)
+
+    dt.main(["--panel", str(tmp_path / "daily" / "panel.parquet"), "--out-daily", str(tmp_path / "daily"),
+             "--out-risk", str(tmp_path / "risk"), "--max-rounds", "20"])
+
+    model = pd.read_parquet(app_path)
+    assert list(model.columns)[:len(dp.CONTRACT)] == dp.CONTRACT
+    days = set(pd.to_datetime(model["burn_date"]))
+    assert last in days                                                  # the live outlook survives
+    assert set(pd.date_range("2023-01-01", "2023-01-07")) <= days        # the gap days stay in the app
+    assert days == set(pd.to_datetime(baseline["burn_date"]))
+    assert len(model) == len(baseline)

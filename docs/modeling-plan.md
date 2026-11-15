@@ -80,7 +80,8 @@ frozen for delivery, the app ships with the baseline file and says so.
      latitude and longitude, and `cal_dow`. Add `cal_month`, `cal_doy_sin`, `cal_doy_cos` too: the
      default model does not use them, the comparison run does. Keep the `segment` column: the
      report breaks the scores down by it.
-  4. The same feature rows for the day after the last complete day, with no target, for the live outlook.
+  4. The same feature rows for the day after the last complete day, for the live outlook: in the
+     panel, with `split` = `live` and `fire` empty.
 - **Reuse:** `load_outages`, `target_outage_days`, `eligible_cells` (`scripts/risk_baseline.py`),
   `neighbour_ids` (`scripts/risk_model.py`).
 - **Done when:** fire cell-days per segment match section 3 once outage days are removed; a test
@@ -259,7 +260,7 @@ Lane A writes it, lane B only reads it.
 | `country`, `admin1` | Country and region of most hotspots of the cell |
 | `segment` | `CL-PV`, `CL-OI`, `AR-PV`, `AR-OI`, from the country and the month of `burn_date` |
 | `season_label` | For example `PV 2023/24`, `OI 2024` |
-| `split` | `train`, `tune`, `test` (section 5) |
+| `split` | `train`, `tune`, `test` (section 5); `live` for the day after the last complete day |
 | `fire` | Target, 0 or 1 |
 | `new_cell` | 1 if neither the cell nor its 8 neighbours had fire on D |
 | `p_hist`, `p_persist`, `p_near` | The three baselines (section 4.3) |
@@ -325,6 +326,8 @@ fire cell-days. A model earns its place by catching more at the same number of a
   for experiments E1 and E2, and it keeps every result comparable.
 - **A fire on both sides of a boundary:** 1 January is inside the Chilean summer. Leave out the first
   7 predicted days of 2021 and of 2023 (**recommendation**), so that one fire is not in two splits.
+  They stay in the panel with `split` = `gap`: no fit, threshold or score reads them, but
+  `risk/cells_daily.parquet` keeps the 2023 ones, so the app shows every day from 1 January 2023.
 - **Space:** neighbouring cells are not independent, and the model will be used on the same cells in
   later years, so the split is in time, not in space. The dependence is handled in the uncertainty
   (section 8), by resampling whole weeks.

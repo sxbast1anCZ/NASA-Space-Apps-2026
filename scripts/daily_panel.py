@@ -19,9 +19,9 @@ Outputs (NASA_Data_Sources/processed/):
     daily/panel.parquet         predicted days 2014-2025, columns of section 4.1 of the plan:
                                 burn_date, cell_lat, cell_lon, country, admin1, segment, season_label,
                                 split, fire, new_cell, p_hist, p_persist, p_near, then the features
-                                (prefixes lag_, nbr_, hist_, cal_, geo_).
-    daily/live.parquet          the same columns for the day after the last complete day, with
-                                split = "live" and no target (fire is null), for the live outlook.
+                                (prefixes lag_, nbr_, hist_, cal_, geo_). The last rows are the day
+                                after the last complete day, for the live outlook: split = "live" and
+                                fire empty (null). Filter on `split` before using `fire`.
     daily/panel_summary.json    row counts, the check against section 3 and the baseline scores.
 
 Definitions:
@@ -466,6 +466,7 @@ def main(argv=None) -> None:
         writer.write_table(table.cast(writer.schema))
         print(f"  {year}: {len(df):,} rows, {counts[str(year)]['fire']:,} fire cell-days")
     if writer is not None:
+        writer.write_table(pa.Table.from_pandas(live, preserve_index=False).cast(writer.schema))
         writer.close()
 
     app = pd.concat(app_parts + [contract_rows(live)], ignore_index=True)[CONTRACT]
@@ -475,7 +476,6 @@ def main(argv=None) -> None:
     if args.baseline_only:
         return
 
-    live.to_parquet(daily_dir / "live.parquet", index=False)
     rules = tally.report()
     summary = {
         "first_day": str(first_day.date()), "last_complete_day": str(last_day.date()),
@@ -486,8 +486,9 @@ def main(argv=None) -> None:
     }
     (daily_dir / "panel_summary.json").write_text(json.dumps(summary, indent=2))
     total = sum(v["rows"] for v in counts.values())
-    seg = pd.read_parquet(daily_dir / "panel.parquet", columns=["segment", "split", "fire"])
-    print(f"Wrote {total:,} rows to {daily_dir / 'panel.parquet'} and {len(live):,} to live.parquet")
+    seg = pd.read_parquet(daily_dir / "panel.parquet", columns=["segment", "split", "fire"],
+                          filters=[("split", "!=", "live")])
+    print(f"Wrote {total:,} labelled rows and {len(live):,} live rows to {daily_dir / 'panel.parquet'}")
     print(seg.groupby(["segment", "split"])["fire"].agg(["size", "sum"]).unstack("split").to_string())
     for rule, by_split in rules.items():
         a = by_split["all"]
