@@ -194,7 +194,9 @@ def main(argv=None) -> None:
 
     predictions = args.out_daily / "predictions.parquet"
     pd.concat(preds).to_parquet(predictions, index=False)
-    pd.concat(apps).sort_values(KEYS).to_parquet(args.out_risk / "cells_daily.parquet", index=False)
+    app = pd.concat(apps).sort_values(KEYS)
+    app["burn_date"] = app["burn_date"].dt.date      # a date, as scripts/daily_panel.py writes it
+    app.to_parquet(args.out_risk / "cells_daily.parquet", index=False)
     (args.out_risk / "daily_model.json").write_text(json.dumps(report, indent=2) + "\n")
     de.main(["--panel", str(args.panel), "--predictions", str(predictions), "--out", str(args.out_risk),
              "--min-recall", str(args.min_recall)])
