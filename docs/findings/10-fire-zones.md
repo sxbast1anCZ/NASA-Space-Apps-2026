@@ -136,7 +136,7 @@ The largest, 145 hotspots in Santiago del Estero, has a chance of 80% and an 80%
 | `GET /api/risk/daily?date=` | Adds `area`: cells, cells in alert, km² of each, expected km², and the same by region |
 | `GET /api/risk/daily/zones?date=` | The fires of the day before in the selected area, largest first, with chance, radii, areas and what happened; their hotspots for the map (up to 6,000, largest fires first) |
 | Status line of the outlook | "The cells in alert cover X km² of Y km² (most in ...); adding chance times area, about Z km² of cells would show a hotspot. That is the area of the 0.25° cells, not burned area." Regions are named only for a box or a country |
-| Checkbox "Zones of likely activity" | A blue dot per fire, darker when it is more likely to be detected again, with 50, 80 and 90% zones shaded around its hotspots. Pointing at a dot gives its numbers and, for past days, what happened |
+| Checkbox "Zones of likely activity" | A blue dot per fire, darker when it is more likely to be detected again, and its zones as flat bands around its hotspots: dark blue for half of its next-day hotspots, outlined for 8 of 10, light for 9 of 10. Pointing at a dot gives its numbers and, for past days, what happened; a click zooms to its zone. Zones never take the mouse, so the cells under them stay clickable |
 
 Blue keeps the fires apart from the yellow-to-red cells. The app starts without the zone files: the
 zones are then empty.

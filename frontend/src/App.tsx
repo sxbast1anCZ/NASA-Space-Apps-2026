@@ -420,6 +420,13 @@ export default function App() {
                     {ZONE_BINS.map((b) => <li key={b.label}><span className="dot" style={{ background: b.color }} />{b.label}</li>)}
                   </ul>
                 )}
+                {showZones && (
+                  <ul className="legend" aria-label="Zones of the next-day hotspots of a fire that keeps burning">
+                    <li><span style={{ background: '#08519c', opacity: 0.8 }} />Zone of half its next hotspots</li>
+                    <li><span style={{ background: '#4292c6', opacity: 0.7, borderColor: '#08306b' }} />8 of 10 (outlined)</li>
+                    <li><span style={{ background: '#9ecae1', opacity: 0.6 }} />9 of 10</li>
+                  </ul>
+                )}
               </>
             )}
             <p className="hint">
@@ -502,7 +509,7 @@ export default function App() {
                 + `Their 80% zones add up to ${full.format(zonesShown.summary.area80_km2)} km².`}
             {' '}A fire here is a group of hotspots of one day closer than 1 km to each other.
             {' '}Each zone is where 8 of 10 next-day hotspots of a fire that keeps burning fell in 2013-2022 (shaded at 50, 80 and 90%);
-            {' '}it is not burned area, a perimeter or a direction. Point at a dot for its numbers. Zoom in: most zones are 1 to 4 km wide.
+            {' '}it is not burned area, a perimeter or a direction. Point at a dot for its numbers; click it to zoom to its zone (most are 1 to 4 km wide around the fire's hotspots).
             {zonesShown.truncated && ' Too many fires for the whole area: the largest ones are shaded; choose a smaller area to see them all.'}
           </p>
         )}

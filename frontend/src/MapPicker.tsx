@@ -56,6 +56,12 @@ function detailCard(d: CellDetail): HTMLElement {
 
 // Fire zones are blue, apart from the yellow-to-red outlook (ZONE_BINS in api.ts).
 const zoneColor = (p: number) => ZONE_BINS.findLast((b) => p >= b.from)!.color
+// Bands of a zone, widest first; k is the index of the radius in a ZoneFire.
+const ZONE_BANDS = [
+  { pane: 'zone90', z: 410, opacity: 0.3, k: 7, color: '#9ecae1', edge: '' },
+  { pane: 'zone80', z: 411, opacity: 0.45, k: 6, color: '#4292c6', edge: '#08306b' },
+  { pane: 'zone50', z: 412, opacity: 0.55, k: 5, color: '#08519c', edge: '' },
+] as const
 
 const escape = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 const km = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString('en'))
@@ -70,7 +76,7 @@ function zoneText(f: ZoneFire, z: Zones) {
   ]
   if (continued === true) lines.push(`What happened: detected again with ${next} hotspot${next === 1 ? '' : 's'}, ${inside} inside the 80% zone.`)
   if (continued === false) lines.push('What happened: not detected again the next day.')
-  lines.push('<i>Where its next hotspots usually fall, not burned area or a perimeter.</i>')
+  lines.push('<i>Where its next hotspots usually fall, not burned area or a perimeter. Click to zoom to its zone.</i>')
   return lines.join('<br>')
 }
 
@@ -123,6 +129,14 @@ export function MapPicker(props: {
     zoneLayer.current = L.layerGroup().addTo(m)
     // Fire dots in SVG on a pane over the cells: only the dots take the mouse, a click elsewhere reaches the cells.
     m.createPane('fires').style.zIndex = '450'
+    // Zones: one pane per band, drawn opaque and made see-through as a whole, so that overlapping circles
+    // read as one flat area. They never take the mouse: clicks go through to the cells.
+    for (const band of ZONE_BANDS) {
+      const pane = m.createPane(band.pane)
+      pane.style.zIndex = String(band.z)
+      pane.style.opacity = String(band.opacity)
+      pane.style.pointerEvents = 'none'
+    }
     layers.current = L.layerGroup().addTo(m)
     map.current = m
     m.on('zoomend', () => setClose(m.getZoom() >= DETAIL_ZOOM))
@@ -233,21 +247,37 @@ export function MapPicker(props: {
     group.clearLayers()
     const z = props.zones
     if (!z) return
-    const renderer = L.canvas()
     const byFire = new Map<number, ZoneFire>(z.fires.map((f) => [f[0], f]))
-    // 90% zone first, then 80% and 50%: the fills add up and the map gets darker where it is most likely.
-    for (const k of [7, 6, 5] as const)
+    const pointsOf = new Map<number, [number, number][]>()
+    for (const [id, lat, lon] of z.points) pointsOf.set(id, [...(pointsOf.get(id) ?? []), [lat, lon]])
+    for (const band of ZONE_BANDS) {
+      const renderer = L.canvas({ pane: band.pane })
+      const circle = (lat: number, lon: number, km: number, color: string) =>
+        L.circle([lat, lon], { renderer, radius: km * 1000, stroke: false, fillColor: color, fillOpacity: 1, interactive: false }).addTo(group)
+      // The 80% zone gets an edge: a darker disc under each circle, then the circles slightly smaller on top.
+      if (band.edge)
+        for (const [id, lat, lon] of z.points) { const f = byFire.get(id); if (f) circle(lat, lon, f[band.k], band.edge) }
       for (const [id, lat, lon] of z.points) {
         const f = byFire.get(id)
-        if (f) L.circle([lat, lon], { renderer, radius: f[k] * 1000, stroke: false, fillColor: '#08519c', fillOpacity: 0.25, interactive: false }).addTo(group)
+        if (f) circle(lat, lon, band.edge ? f[band.k] * 0.92 : f[band.k], band.color)
       }
+    }
+    const zoomTo = (f: ZoneFire) => {
+      const pts = pointsOf.get(f[0]) ?? [[f[1], f[2]]]
+      const pad = f[7] / 111                       // the 90% radius, in degrees of latitude
+      const lats = pts.map((p) => p[0]), lons = pts.map((p) => p[1])
+      const k = 1 / Math.cos((f[1] * Math.PI) / 180)
+      map.current!.flyToBounds([[Math.min(...lats) - pad, Math.min(...lons) - pad * k], [Math.max(...lats) + pad, Math.max(...lons) + pad * k]],
+        { maxZoom: 13, padding: [20, 20] })
+    }
     for (const f of z.fires) {
       const [, lat, lon, hotspots, p] = f
       L.circleMarker([lat, lon], {
-        pane: 'fires', radius: Math.min(3 + Math.sqrt(hotspots), 14), color: '#08306b', weight: 1,
-        fillColor: zoneColor(p), fillOpacity: 0.95,
+        pane: 'fires', radius: Math.min(3 + Math.sqrt(hotspots) / 2, 8), color: '#fff', weight: 1.5,
+        fillColor: zoneColor(p), fillOpacity: 1,
       })
         .bindTooltip(zoneText(f, z), { className: 'zone-tip' })
+        .on('click', () => zoomTo(f))
         .addTo(group)
     }
   }, [props.zones])

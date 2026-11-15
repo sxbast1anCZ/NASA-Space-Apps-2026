@@ -78,6 +78,7 @@ fieldset button, fieldset .error { grid-column: 1 / -1; }
 .legend span.outlined { background: #fff; border: 2px solid #3b0a12; }
 .legend span.dot { border-radius: 50%; border-color: #08306b; }
 .leaflet-tooltip.zone-tip { white-space: normal; width: 300px; }
+.leaflet-fires-pane path:focus { outline: none; }
 label.check { flex-direction: row; align-items: flex-start; gap: 8px; text-transform: none; }
 label.check input { margin-top: 3px; }
 .cell-card { font-size: 0.85rem; line-height: 1.4; }
