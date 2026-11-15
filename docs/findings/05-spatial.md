@@ -1,6 +1,6 @@
 # Findings, block 5: spatial patterns
 
-Notebook: `notebooks/05_spatial.ipynb` (owner: Felipe). Task: `docs/open-tasks.md`, task 1. Input: `processed/harmonized/cells_daily.parquet` (harmonized hotspots per 0.25° cell and `burn_date`) and `processed/quality/static_mask_cells.parquet`.
+Notebook: `notebooks/05_spatial.ipynb` (owner: Felipe). Input: `processed/harmonized/cells_daily.parquet` (harmonized hotspots per 0.25° cell and `burn_date`) and `processed/quality/static_mask_cells.parquet`.
 Output: `NASA_Data_Sources/processed/spatial/cell_regimes.parquet` and `regime_names.csv` (git-ignored).
 
 Units: harmonized hotspots (VIIRS-equivalent, the sum of `hotspots_harmonized`). Hotspots are detections, not fires and not burned area. Densities are per km², with the cell area `(0.25 * 111.32)² * cos(cell_lat + 0.125)`. MODIS era: 2001-2011 (estimated from MODIS with the block 3 factors). VIIRS era: 2012-2025 (Suomi-NPP).

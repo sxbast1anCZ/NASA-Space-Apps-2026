@@ -1,6 +1,6 @@
 import type { EChartsOption } from 'echarts'
 import { useEffect, useMemo, useState } from 'react'
-import type { Box, Calendar, Meta, Month, RiskCell, Search } from './api.ts'
+import type { Box, Calendar, Meta, Month, Reference, RiskCell, Search } from './api.ts'
 import { errorText, getCalendar, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
 import { Chart } from './Chart.tsx'
 import { MapPicker } from './MapPicker.tsx'
@@ -9,7 +9,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // Colour-blind safe ramps: viridis for counts, blue-white-red for the ratio to the median.
 const VIRIDIS = ['#440154', '#46327e', '#365c8d', '#277f8e', '#1fa187', '#4ac16d', '#a0da39', '#fde725']
 const RATIO_BINS = [
-  { lt: 0.5, label: 'under half the median', color: '#2166ac' },
+  { gte: 0, lt: 0.5, label: 'under half the median', color: '#2166ac' },
   { gte: 0.5, lt: 0.8, label: '0.5 to 0.8 times', color: '#92c5de' },
   { gte: 0.8, lt: 1.25, label: 'near the median', color: '#f0f0f0' },
   { gte: 1.25, lt: 2, label: '1.25 to 2 times', color: '#f4a582' },
@@ -24,16 +24,14 @@ const yearOf = (isoDate: string) => Number(isoDate.slice(0, 4))
 const ordinal = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][n % 100 > 10 && n % 100 < 14 ? 0 : Math.min(n % 10, 4) % 4]}`
 const toolbox = { feature: { saveAsImage: { title: 'Save as image', pixelRatio: 2 } } }
 
-function ratioOf(m: Month, median: (number | null)[]) {
-  const med = median[m.month - 1]
-  return med ? m.hotspots / med : null
-}
+const referenceYears = (r: Calendar['reference']) => (r.from_year === null ? 'no complete year' : `${r.from_year}–${r.to_year}`)
 
 function notes(m: Month) {
   return [
     m.estimated && 'estimated from MODIS',
     m.provisional && 'provisional data',
     m.partial && 'month not finished',
+    !m.partial && !m.reliable && 'reference too small to compare (median under 10)',
   ].filter(Boolean)
 }
 
@@ -41,10 +39,14 @@ function calendarOption(data: Calendar, view: 'count' | 'ratio'): EChartsOption 
   const years = [...new Set(data.months.map((m) => m.year))].sort((a, b) => b - a)
   const max = Math.max(1, ...data.months.map((m) => m.hotspots))
   const cells = data.months.map((m) => {
-    const ratio = ratioOf(m, data.median_by_month)
+    const ratio = view === 'ratio' && m.reliable ? m.ratio : null
     // Counts are coloured on a square-root scale so that ordinary months are not all dark.
-    const shade = view === 'count' ? Math.sqrt(m.hotspots) : (ratio ?? '-')
-    return { value: [m.month - 1, years.indexOf(m.year), shade], month: m, ratio }
+    // In the ratio view a month without a reliable ratio gets -1: outside every bin, so no anomaly colour.
+    const shade = view === 'count' ? Math.sqrt(m.hotspots) : (ratio ?? -1)
+    return {
+      value: [m.month - 1, years.indexOf(m.year), shade], month: m, ratio,
+      ...(view === 'ratio' && ratio === null && { label: { color: '#777' } }),
+    }
   })
   return {
     aria: { enabled: true },
@@ -54,12 +56,11 @@ function calendarOption(data: Calendar, view: 'count' | 'ratio'): EChartsOption 
     yAxis: { type: 'category', data: years.map(String), inverse: true },
     tooltip: {
       formatter: (p) => {
-        const { month: m, ratio } = (p as unknown as { data: (typeof cells)[number] }).data
-        const med = data.median_by_month[m.month - 1]
+        const { month: m } = (p as unknown as { data: (typeof cells)[number] }).data
         return [
           `<b>${MONTHS[m.month - 1]} ${m.year}</b>: ${full.format(m.hotspots)} hotspots`,
-          med === null ? '' : `Median for ${MONTHS[m.month - 1]}: ${full.format(med)}`,
-          ratio === null ? '' : `${ratio.toFixed(2)} times the median`,
+          m.median === null ? '' : `Median of ${MONTHS[m.month - 1]} in the other years of ${referenceYears(data.reference)}: ${full.format(m.median)}`,
+          m.ratio === null ? '' : `Ratio to the median: ${m.ratio.toFixed(2)}`,
           ...notes(m),
         ].filter(Boolean).join('<br>')
       },
@@ -71,7 +72,10 @@ function calendarOption(data: Calendar, view: 'count' | 'ratio'): EChartsOption 
             left: 'center', bottom: 8, inRange: { color: VIRIDIS }, text: [compact.format(max), '0'],
             calculable: false, formatter: (v) => compact.format(Number(v) ** 2),
           }
-        : { type: 'piecewise', pieces: RATIO_BINS, dimension: 2, orient: 'horizontal', left: 'center', bottom: 8 },
+        : {
+            type: 'piecewise', pieces: RATIO_BINS, dimension: 2, orient: 'horizontal', left: 'center', bottom: 8,
+            outOfRange: { color: '#fff' },
+          },
     series: [{
       type: 'heatmap',
       data: cells,
@@ -79,7 +83,7 @@ function calendarOption(data: Calendar, view: 'count' | 'ratio'): EChartsOption 
         show: true, fontSize: 10, color: '#111', textBorderColor: '#fff', textBorderWidth: 2,
         formatter: (p) => {
           const { month: m, ratio } = (p as unknown as { data: (typeof cells)[number] }).data
-          const text = view === 'count' ? compact.format(m.hotspots) : ratio === null ? '–' : `${ratio.toFixed(1)}×`
+          const text = ratio === null ? compact.format(m.hotspots) : `${ratio.toFixed(1)}×`
           return m.partial ? `${text}*` : text
         },
       },
@@ -134,12 +138,11 @@ function seasonOption(data: Calendar): EChartsOption {
 }
 
 function calendarCsv(data: Calendar) {
-  const head = 'year,month,hotspots_harmonized,hotspots_raw,estimated_from_modis,provisional,partial,median_for_month,ratio_to_median'
-  const rows = data.months.map((m) => {
-    const ratio = ratioOf(m, data.median_by_month)
-    return [m.year, m.month, m.hotspots, m.raw, m.estimated, m.provisional, m.partial,
-      data.median_by_month[m.month - 1] ?? '', ratio === null ? '' : ratio.toFixed(3)].join(',')
-  })
+  const head = 'year,month,hotspots_harmonized,hotspots_raw,estimated_from_modis,provisional,partial,reference_median,ratio_to_median,reliable,reference_years'
+  const reference = data.reference.from_year === null ? '' : `${data.reference.from_year}-${data.reference.to_year}`
+  const rows = data.months.map((m) =>
+    [m.year, m.month, m.hotspots, m.raw, m.estimated, m.provisional, m.partial,
+      m.median ?? '', m.ratio ?? '', m.reliable, reference].join(','))
   return new Blob([[head, ...rows].join('\n') + '\n'], { type: 'text/csv' })
 }
 
@@ -156,10 +159,10 @@ function KeyFigures({ data }: { data: Calendar }) {
         <h3>{days}{MONTHS[c.month - 1]} {c.year}</h3>
         <p className="big">{full.format(c.hotspots)} hotspots</p>
         <p>
-          {c.median === null ? 'No earlier years to compare with.'
-            : c.ratio === null ? `The median of the same days in ${c.years_compared} earlier years is 0.`
-            : `${c.ratio.toFixed(1)} times the median of the same days in ${c.years_compared} earlier years (${full.format(c.median)}).`}
-          {c.rank !== null && ` ${ordinal(c.rank)} highest of ${c.years_compared + 1}.`}
+          {c.median === null || c.ratio === null ? 'No reference years to compare with.'
+            : `Ratio ${c.ratio.toFixed(1)} to the median of the same days in ${referenceYears(data.reference)} (${full.format(c.median)}).`}
+          {c.rank !== null && ` ${ordinal(c.rank)} highest of ${c.years_compared + 1} years.`}
+          {c.median !== null && !c.reliable && ' The median is under 10: too small for a reliable comparison.'}
         </p>
       </div>
       <div>
@@ -184,6 +187,7 @@ export default function App() {
   const [data, setData] = useState<Calendar | null>(null)
   const [error, setError] = useState('')
   const [view, setView] = useState<'count' | 'ratio'>('count')
+  const [reference, setReference] = useState<Reference>('recent')
   const [drawing, setDrawing] = useState(false)
   const [coords, setCoords] = useState(EMPTY_BOX)
   const [coordError, setCoordError] = useState('')
@@ -203,7 +207,7 @@ export default function App() {
   useEffect(() => {
     if (!search) return
     let stale = false
-    getCalendar(search)
+    getCalendar(search, reference)
       .then((d) => {
         if (stale) return
         setData(d)
@@ -213,7 +217,7 @@ export default function App() {
     return () => {
       stale = true
     }
-  }, [search])
+  }, [search, reference])
 
   useEffect(() => {
     if (!search || !riskWeek) return
@@ -396,12 +400,21 @@ export default function App() {
                     <button type="button" className={view === 'count' ? 'active' : ''} aria-pressed={view === 'count'} onClick={() => setView('count')}>Hotspots</button>
                     <button type="button" className={view === 'ratio' ? 'active' : ''} aria-pressed={view === 'ratio'} onClick={() => setView('ratio')}>Compared with the median</button>
                   </div>
+                  <div role="group" aria-label="Reference years of the median">
+                    <button type="button" className={reference === 'recent' ? 'active' : ''} aria-pressed={reference === 'recent'} onClick={() => setReference('recent')}>2013 onward</button>
+                    <button type="button" className={reference === 'all' ? 'active' : ''} aria-pressed={reference === 'all'} onClick={() => setReference('all')}>All years</button>
+                  </div>
                 </div>
                 <Chart option={calendar} height={data.years.length * 22 + 120} label={`Hotspots per month and year in ${areaName}`} />
                 <p className="hint">
                   Hotspots in VIIRS-equivalent units, by calendar year. Days run from 06:00 to 06:00 local solar time.
                   Before {MONTHS[1]} 2012 the counts are MODIS detections scaled to the VIIRS level: estimates, within
                   about 14% (Argentina) and 24% (Chile) for a region and month. * marks a month that is not finished.
+                </p>
+                <p className="hint">
+                  Compared with the median: (hotspots + 1) / (median + 1), where the median is that of the same
+                  month in the reference years, {referenceYears(data.reference)}, leaving out the year itself.
+                  A month whose median is under 10, or that is not finished, shows its count with no colour.
                 </p>
               </section>
 
@@ -414,7 +427,7 @@ export default function App() {
                 <section>
                   <h2>A typical year</h2>
                   <Chart option={season} height={260} label={`Median hotspots per calendar month in ${areaName}`} />
-                  <p className="hint">Median of each calendar month over the selected years.</p>
+                  <p className="hint">Median of each calendar month over the reference years, {referenceYears(data.reference)}.</p>
                 </section>
               </div>
             </>

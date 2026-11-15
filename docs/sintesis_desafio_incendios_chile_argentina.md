@@ -16,7 +16,7 @@ Las secciones siguientes desarrollan estos hallazgos, identifican sus fuentes y 
 
 ## 2. Qué pide el desafío y qué proviene del adjunto
 
-El documento entregado, `challenge-brief.es.md`, describe **Harmonization of MODIS and VIIRS Hot Spots**: una aplicación web que combine el registro histórico de MODIS con VIIRS y permita consultar un calendario de actividad de fuego para una región y un intervalo temporal. La descripción pública del desafío corrobora ese objetivo general. [NASA Space Apps: desafío](https://www.spaceappschallenge.org/2026/challenges/harmonization-of-modis-and-viirs-hot-spots/).
+El brief del desafío (resumido hoy en `docs/challenge-requirements.md`) describe **Harmonization of MODIS and VIIRS Hot Spots**: una aplicación web que combine el registro histórico de MODIS con VIIRS y permita consultar un calendario de actividad de fuego para una región y un intervalo temporal. La descripción pública del desafío corrobora ese objetivo general. [NASA Space Apps: desafío](https://www.spaceappschallenge.org/2026/challenges/harmonization-of-modis-and-viirs-hot-spots/).
 
 Según el adjunto, sus dos componentes son armonizar los datos y visualizar la serie resultante. También menciona comparaciones históricas, descarga de resultados y selección de áreas; presenta rampas de color y algunas interacciones como sugerencias. **El método de armonización, la geografía y el alcance del prototipo quedan abiertos.** El foco Chile–Argentina procede de la solicitud del equipo.
 

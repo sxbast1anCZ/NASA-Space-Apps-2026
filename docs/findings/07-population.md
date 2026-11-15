@@ -1,7 +1,7 @@
 # Block 7 findings: population and exposure
 
 Source: `notebooks/07_population.ipynb`, run on 2026-11-14 (about 40 seconds). Plan: `docs/eda-plan.md`,
-block 7. Task: `docs/open-tasks.md`, task 2. Population: WorldPop R2025A, constrained, 2024, about
+block 7. Population: WorldPop R2025A, constrained, 2024, about
 100 m (`./scripts/download_population.sh`). Fire: `harmonized/cells_daily.parquet` and
 `harmonized/hotspots_kept.parquet`.
 
@@ -91,7 +91,7 @@ Chile pixels use the census rescale.
 
 ## Data note
 
-`hotspots_kept.parquet` has 7,000,575 rows here against 7,000,520 in `docs/open-tasks.md`; the
+`hotspots_kept.parquet` has 7,000,575 rows here against 7,000,520 in `docs/eda-runbook.md`; the
 FIRMS API files were downloaded later on 2026-11-14 and the near-real-time months had been revised
 (the hotspot table has 8,042,448 rows against 8,042,380). `cells_daily.parquet` matches exactly
 (1,020,967 rows).

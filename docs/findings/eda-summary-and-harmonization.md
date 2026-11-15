@@ -2,9 +2,10 @@
 
 Written on 2026-11-14 after re-running the pipeline of `docs/eda-runbook.md` (steps 5 to 9) and the
 notebooks 00, 01, 03 and 04 on the data downloaded that day. Blocks 5, 6 and 7 were run afterwards on
-the same data (section 2.5). Every number below comes from those runs or from the findings files they
+the same data (section 2.5; results in `docs/findings/05-spatial.md`, `06-case-studies.md` and
+`07-population.md`). Every number below comes from those runs or from the findings files they
 reproduced. Statements marked **(inference)** are interpretation, not something the data proves.
-Block 2 is planned in `docs/eda-plan.md` but not run.
+Block 2 (`docs/findings/02-observation-effort.md`) was added later and this summary does not cover it.
 
 ## 1. What was checked
 
@@ -79,6 +80,15 @@ The harmonized series averages **273,833 hotspots a year in 2001-2011 and 203,56
 ratio of 1.35** (`cells_daily.parquet`, calendar years). Raw MODIS is also higher before 2012. There is
 no obvious step at the 2012 switch. The data cannot say whether the higher level is real fire
 activity, the factors, the MODIS collections (6.2, then 6.03, then 61.03) or something else.
+
+**Checked afterwards** (`docs/findings/03-modis-vs-viirs.md`, "The level before 2012", and the fuller
+study `docs/findings/03b-pre2012-level.md`): raw MODIS shows the same ratio, 1.35, between 2003-2011 and
+2013-2021, with Terra and Aqua both flying on stable orbits. The factors do not create the difference.
+Terra-only and Aqua-only factors agree, the level holds for every calibration window with `K >= 50`,
+and 65% of the excess is in Salta and Santiago del Estero between July and November. The drop is larger
+inside one MODIS collection (1.51 for 2003-2011 against 2013-2017, all collection 6.2), so the collection
+changes are not the main cause, although the 2018 change is not ruled out as a small part of it. The
+cause of the drop is still open.
 
 Within one sensor and one stable period (block 4.7):
 
