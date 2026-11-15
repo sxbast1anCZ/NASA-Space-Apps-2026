@@ -214,10 +214,11 @@ export function MapPicker(props: {
     const used: Box | null = usedKey ? JSON.parse(usedKey) : null
     const group = layers.current!
     group.clearLayers()
+    // The outlines only show the area: never take the mouse, or they hide the cells under them from clicks.
     if (used)
-      L.rectangle(toBounds(used), { color: '#D55E00', weight: 1, dashArray: '4 4', fill: false }).addTo(group)
+      L.rectangle(toBounds(used), { color: '#D55E00', weight: 1, dashArray: '4 4', fill: false, interactive: false }).addTo(group)
     if (box) {
-      L.rectangle(toBounds(box), { color: '#0072B2', weight: 2, fillOpacity: 0.08 }).addTo(group)
+      L.rectangle(toBounds(box), { color: '#0072B2', weight: 2, fillOpacity: 0.08, interactive: false }).addTo(group)
       map.current!.fitBounds(toBounds(used ?? box), { padding: [30, 30], maxZoom: 9 })
     } else if (used) {
       map.current!.fitBounds(toBounds(used), { padding: [10, 10] })
