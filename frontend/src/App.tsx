@@ -149,7 +149,7 @@ function calendarCsv(data: Calendar) {
 
 function KeyFigures({ data }: { data: Calendar }) {
   const c = data.current
-  const days = c.days >= 28 && !data.months.at(-1)?.partial ? '' : `1–${c.days} `
+  const days = c.first_day === 1 && c.days >= 28 && !data.months.at(-1)?.partial ? '' : `${c.first_day}–${c.days} `
   const byMonth = MONTHS.map((_, i) =>
     data.months.filter((m) => m.month === i + 1 && !m.partial).reduce((sum, m) => sum + m.hotspots, 0))
   const peak = byMonth.indexOf(Math.max(...byMonth))

@@ -358,7 +358,7 @@ def calendar(
     first = con.execute("SELECT min(burn_date) FROM cells").fetchone()[0]
     start = max(start or first, first).replace(day=1)  # the calendar works on whole months
     end = min(end or through, through)
-    if start > end:
+    if start > end or end < first:  # a period that ends before the first day of data covers no day
         raise HTTPException(422, "'from' must be before 'to' and inside the data period")
 
     n_cells, w, s, e, n = con.execute(f"""
@@ -415,16 +415,18 @@ def calendar(
         })
 
     # Current period: never compare a partial month with complete ones. Take the same days
-    # (1 to N) of the same month in the reference years.
+    # (1 to N) of the same month in the reference years. When the period ends in the first month of
+    # the record, the data start after day 1: compare only the days covered (first.day to N).
+    first_day = first.day if (end.year, end.month) == (first.year, first.month) else 1
     same_days = dict(con.execute(f"""
         SELECT year(burn_date), sum(hotspots_harmonized) FROM cells
-        WHERE {where} AND month(burn_date) = ? AND day(burn_date) <= ? AND burn_date <= ?
+        WHERE {where} AND month(burn_date) = ? AND day(burn_date) BETWEEN ? AND ? AND burn_date <= ?
         GROUP BY 1
-    """, [*params, end.month, end.day, through]).fetchall())
+    """, [*params, end.month, first_day, end.day, through]).fetchall())
     others = [same_days.get(yr, 0.0) for yr in ref_years if yr != end.year]
     now = same_days.get(end.year, 0.0)
     current = {
-        "year": end.year, "month": end.month, "days": end.day, "hotspots": round(now, 1),
+        "year": end.year, "month": end.month, "first_day": first_day, "days": end.day, "hotspots": round(now, 1),
         **anomaly(now, others),
         "years_compared": len(others),
         "rank": 1 + sum(v > now for v in others) if others else None,

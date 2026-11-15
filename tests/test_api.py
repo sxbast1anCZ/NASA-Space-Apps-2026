@@ -101,6 +101,26 @@ def test_first_month_of_the_record_is_partial_only_there(client):
     assert body["months"][0]["partial"] is False and body["months"][0]["ratio"] is not None
 
 
+def test_current_period_in_the_first_month_compares_only_the_days_covered(client, tmp_path):
+    # The record starts on 2012-02-05. Every reference year has 50 hotspots on 2 February, a day the
+    # first month does not cover, and 12 on 10 February. Feb 5-28 must be compared with Feb 5-28.
+    duckdb.sql(f"""COPY (
+        SELECT d AS burn_date, -25.0 AS cell_lat, -65.0 AS cell_lon, 'Argentina' AS country, 'Salta' AS admin1,
+               'VIIRS' AS sensor, v::BIGINT AS hotspots_raw, v::DOUBLE AS hotspots_harmonized, false AS provisional
+        FROM (SELECT DATE '2012-02-05' AS d, 12 AS v UNION ALL SELECT DATE '2024-01-02', 1
+              UNION ALL SELECT make_date(y, 2, 2), 50 FROM range(2013, 2024) t(y)
+              UNION ALL SELECT make_date(y, 2, 10), 12 FROM range(2013, 2024) t(y))
+    ) TO '{tmp_path}/harmonized/cells_daily.parquet'""")
+    body = client.get("/api/calendar", params={**SALTA, "to": "2012-02-28"}).json()
+    assert body["months"][0]["partial"] is True and body["months"][0]["ratio"] is None
+    current = body["current"]
+    assert (current["first_day"], current["days"], current["hotspots"]) == (5, 28, 12.0)
+    assert (current["median"], current["ratio"], current["reliable"]) == (12.0, 1.0, True)
+    # Later months still start on day 1, and a period that ends before the first day of data is refused.
+    assert client.get("/api/calendar", params=SALTA).json()["current"]["first_day"] == 1
+    assert client.get("/api/calendar", params={**SALTA, "to": "2012-02-03"}).status_code == 422
+
+
 def test_partial_month_is_compared_on_the_same_days(client):
     body = client.get("/api/calendar", params=CHILE_BOX).json()
     assert body["to"] == "2024-03-15"
