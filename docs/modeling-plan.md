@@ -7,8 +7,61 @@ It is a plan: no model in it has been trained. Every statement is marked as one 
 - **Hypothesis:** an explanation that was not tested.
 - **Recommendation:** a choice proposed here, open to change.
 
-Two people do the work, each with their own files: **Vicente** builds the data and the evaluation
-(lane A), **Felipe** selects features and trains the models (lane B). Section 11 has the split.
+**Scope for the deadline: section 0.** It replaces the four models and the two-person split of the
+sections below, which stay as the full version of the brief, to be done only if time is left.
+
+## 0. Scope decided for the deadline
+
+Decided on the night of 2026-11-14, with about 13 hours left and the interface still to build.
+
+| Topic | Full brief (sections 3 to 8) | Scope for the deadline |
+|---|---|---|
+| Models | Four: country by season group | **Two: one for Chile, one for Argentina, all months** (experiment E1 of section 3 becomes the design) |
+| Algorithm | LightGBM, XGBoost and Random Forest | LightGBM. The other two only if time is left; the training code is the same |
+| Feature selection, SHAP, tuning | 12 runs | Not done. Importance by gain and one permutation run, as information |
+| Weather features | Yes | Only if the rest is finished |
+| Season in the report | One model per season | Each model is scored on its two season groups (September-February, March-August), so the report still shows where it misses more |
+
+**Why one model per country.** The season cut of the brief runs through the fire season of both
+countries (section 3): a seasonal model would see half of each season. One model per country sees
+the whole year and needs no change of model on 1 March or 1 September.
+
+**Season and date as features (recommendation).** The worry is that the model learns "it is August"
+and not the conditions. Three different things are involved:
+
+| Feature | Decision | Reason |
+|---|---|---|
+| Month, sine and cosine of the day of the year | **Left out** | They let the model learn the calendar directly. In the weekly model, position and season together were 2.8% of the gain, so little is lost |
+| Year | **Never a feature** | A tree cannot follow a year it has not seen |
+| Day of the week | Kept | It is not the season: fire-days fall 28 to 37% on Sundays |
+| Historical rate of the cell for that time of the year (`hist_`) | **Kept** | It is not the date: it says how often this cell had fire at this time of the year, in earlier years only. It was 56% of the gain of the weekly model. Without it the model does not beat the baselines |
+
+Seasonality is real, not a bias: August in the Chaco does burn more. Removing the calendar features
+does not hide it from the model, because the historical rate and recent fire carry it. What removing
+them does is make the model depend on what the cell does, not on what the calendar says. One extra
+training settles it: the same model with the calendar features in. Keep whichever has fewer false
+negatives at the same number of alerts on `tune`.
+
+**Four people, four lanes.** No shared files. Names are a proposal; swap freely.
+
+| Lane | Who | What | Files | Depends on |
+|---|---|---|---|---|
+| Data | Vicente | The daily panel (section 4.1) and the three baselines. **First output, before any model:** `risk/cells_daily.parquet` filled with the `p_near` baseline, so that the interface can be built | `scripts/daily_panel.py`, `tests/test_daily_panel.py` | Nothing |
+| Evaluation | Luciano | Threshold at the required recall, confusion matrix, scores, breakdown by season group, month and region (section 8, without the bootstrap) | `scripts/daily_eval.py`, `tests/test_daily_eval.py` | Nothing: test it with made-up arrays |
+| Models | Felipe | Two LightGBM models, the run with calendar features, the final `risk/cells_daily.parquet` and a metrics file. Runpod if wanted | `scripts/daily_train.py`, `tests/test_daily_train.py` | The panel; until then, a made-up panel with the columns of section 4.1 |
+| Interface | David or Sebastián | A daily layer next to the weekly one: an endpoint that reads `risk/cells_daily.parquet` (like `/api/risk` in `backend/main.py`) and the map layer, with rings of 5 and 10 km around the hotspots of the last day (section 9) | `backend/main.py`, `frontend/src/`, `tests/test_api.py` | The baseline file of the data lane |
+
+`risk/cells_daily.parquet` has `burn_date` (the day predicted), `cell_lat`, `cell_lon`, `probability`,
+`baseline_probability` and `alert` (0 or 1). The interface reads only those columns, so the model
+replaces the baseline file without any change in the app.
+
+**Runpod.** Two models train in minutes. A pod is useful to keep laptops cool and to run the four
+trainings (two countries, with and without calendar features) at once: a CPU pod with many cores,
+not a GPU. LightGBM here runs on the CPU, and pods with a large GPU usually have few cores. Copy the
+panel and the repository only; never `.env` or keys.
+
+**Cut-off.** If no model is scored by 03:00, the interface ships with the `p_near` baseline and the
+rings, and says so. Pitch, video, project page and deployment need an owner and the morning.
 
 ## 1. Read this first
 
