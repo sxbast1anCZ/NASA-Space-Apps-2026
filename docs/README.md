@@ -30,6 +30,7 @@ if two documents disagree, the one marked **current** wins.
 |---|---|---|
 | `challenge-requirements.md` | What the challenge asks, summarized from the official page | Current |
 | `background.md` | The sensors (MODIS, VIIRS), the literature and the data sources | Reference |
+| `sintesis_desafio_incendios_chile_argentina.md` | Fire in Chile and Argentina, as context for the challenge. **In Spanish** | Reference |
 | `population-and-past-fires.md` | Population data sources, the exposure method and the past fires used as cases | Reference |
 
 ## Data: how to build it and what each file holds

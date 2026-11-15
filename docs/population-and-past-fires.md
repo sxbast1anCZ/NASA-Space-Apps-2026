@@ -37,7 +37,7 @@ Precompute this per grid cell once, so the web app never loads the full rasters.
 
 ### Important limits
 
-- **Exposure is not damage.** We report who is near the fire, not who will be affected. Hot spots do not measure burned area (see `docs/modeling-plan.md`, section 9).
+- **Exposure is not damage.** We report who is near the fire, not who will be affected. Hot spots do not measure burned area (see `sintesis_desafio_incendios_chile_argentina.md`, section 4).
 - Gridded population models residential population. Tourists and seasonal workers are not included (relevant for Puerto Patriada).
 - Wind direction is a simple heuristic, not a fire spread simulation.
 
@@ -53,7 +53,7 @@ Precompute this per grid cell once, so the web app never loads the full rasters.
 | **Torres del Paine, Dec 2011 – Jan 2012** | Started on 27 Dec 2011 near Lago Grey, about 17,600 ha of the national park. | **MODIS-only case.** Before VIIRS existed. The harmonized calendar ranks December 2011 first of 26 years for that area. |
 | **Paraná Delta, Apr 2008** | About 207,000 ha of wetland islands (Entre Ríos and Buenos Aires); smoke covered Buenos Aires on 15–20 April. | **MODIS-only case.** The hotspot peak (18 April) falls inside the smoke episode, and the month ranks first of 26 years. |
 | **Puerto Patriada, Chubut, Jan–Feb 2026** | Started 5 Jan, more than 30,000 ha of native forest, plantations and shrubland, controlled after 39 days. More than 3,000 people evacuated. Preventive evacuation avoided deaths. | **Positive counterexample.** Early warning and timely evacuation saved lives, which is what our tool supports. |
-| **Córdoba 2024 and 2025, Corrientes 2022** | Córdoba 2024: 586 fires and 103,327 ha, 76% of it in September; Córdoba 2025: 675 fires but 21,183 ha (IDECOR provincial mapping, [2024](https://www.idecor.gob.ar/incendios-forestales-en-2024-datos-del-mapeo-provincial/), [2025](https://www.idecor.gob.ar/incendios-forestales-y-rurales-en-2025-los-datos-oficiales-del-mapeo-provincial/); IDECOR lowered its minimum mapped unit from 10 to 2 ha in 2024). Corrientes, Jan–Feb 2022: more than 10,000 km² affected, much of it wetland ([Saucedo, Perucca and Kurtz, Ecología Austral, 2023](https://ojs.ecologiaaustral.com.ar/index.php/Ecologia_Austral/article/view/2020)). | Different fire regimes inside Argentina. More fires does not mean more area burned, and fire also hits wetlands, not only forest. |
+| **Córdoba 2024, Corrientes 2022** | See `sintesis_desafio_incendios_chile_argentina.md`. | Different fire regimes inside Argentina. |
 | **Chilecito, La Rioja, Jul 2026** | Example used by the challenge author (CONAE) in her audio briefing. | Connects our work to the author's own use case. |
 
 ### Demo idea: "What would the tool have shown?"

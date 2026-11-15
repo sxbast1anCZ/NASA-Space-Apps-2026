@@ -5,7 +5,7 @@ What each document is for: `docs/README.md`.
 
 ## Project status
 
-> Written in English per `CONTRIBUTING.md`, like every document in the repository. Last updated 2026-11-15.
+> Written in English per `CONTRIBUTING.md`. Last updated 2026-11-15.
 
 **If you are an agent starting work here, read `docs/agent-handoff.md` first.** It has the context,
 the rules and the open tasks. This section is only a summary.
