@@ -69,6 +69,7 @@ APP_FROM = pd.Timestamp("2023-01-01")
 MIN_FIRES = 200              # fewer fires (or hotspots, for a radius) in a group: use the wider group
 THIN_DEG = 0.002             # points of the map file, about 200 m
 KM_LAT = 110.574
+EARTH_KM = 6371.0088         # mean radius
 KM_LON = 111.320
 ONE = pd.Timedelta(days=1)
 _T0 = time.perf_counter()
@@ -81,9 +82,16 @@ def log(msg: str) -> None:
 # ---------------------------------------------------------------- geometry
 
 def to_km(lat, lon) -> np.ndarray:
-    """Plane coordinates in km (x east, y north). Good to a few metres at the 1-50 km of this script."""
-    lat, lon = np.asarray(lat, dtype="float64"), np.asarray(lon, dtype="float64")
-    return np.c_[lon * KM_LON * np.cos(np.radians(lat)), lat * KM_LAT]
+    """Points on a sphere of radius EARTH_KM, as x, y, z in km.
+
+    The straight-line distance between two of them is the great-circle distance to within one part in
+    a million at the 0-50 km of this script, so a KD-tree on these coordinates links and measures
+    correctly anywhere. (A plane x = lon * cos(lat) does not: with longitudes near -70 degrees, a small
+    change of latitude moved x by hundreds of metres.)
+    """
+    lat, lon = np.radians(np.asarray(lat, dtype="float64")), np.radians(np.asarray(lon, dtype="float64"))
+    c = np.cos(lat)
+    return EARTH_KM * np.c_[c * np.cos(lon), c * np.sin(lon), np.sin(lat)]
 
 
 def group_fires(xy: np.ndarray, link_km: float = LINK_KM) -> np.ndarray:

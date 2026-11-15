@@ -28,6 +28,33 @@ def xy(km_east, km_north):
 
 # ---------------------------------------------------------------- geometry
 
+def haversine_km(lat1, lon1, lat2, lon2):
+    la1, lo1, la2, lo2 = map(np.radians, (lat1, lon1, lat2, lon2))
+    h = np.sin((la2 - la1) / 2) ** 2 + np.cos(la1) * np.cos(la2) * np.sin((lo2 - lo1) / 2) ** 2
+    return 2 * fz.EARTH_KM * np.arcsin(np.sqrt(h))
+
+
+def test_distances_match_the_great_circle_anywhere_in_both_countries():
+    rng = np.random.default_rng(0)
+    lat = rng.uniform(-55, -22, 5000)
+    lon = rng.uniform(-75, -53, 5000)
+    bearing = rng.uniform(0, 2 * np.pi, 5000)
+    km = rng.uniform(0.2, 50, 5000)
+    lat2 = lat + np.degrees(km * np.cos(bearing) / fz.EARTH_KM)
+    lon2 = lon + np.degrees(km * np.sin(bearing) / fz.EARTH_KM / np.cos(np.radians(lat)))
+    got = np.linalg.norm(fz.to_km(lat, lon) - fz.to_km(lat2, lon2), axis=1)
+    np.testing.assert_allclose(got, haversine_km(lat, lon, lat2, lon2), rtol=1e-5)
+
+
+def test_a_900_m_pair_links_and_a_1200_m_pair_does_not():
+    # the two cases of the review: 900 m north-south and 1,204 m along a diagonal, far west in longitude
+    north = fz.to_km([-38.0, -38.0 + 0.9 / fz.EARTH_KM * 180 / np.pi], [-71.0, -71.0])
+    assert fz.group_fires(north).tolist() == [0, 0]
+    step = 1.204 / np.sqrt(2) / fz.EARTH_KM * 180 / np.pi
+    diag = fz.to_km([-38.0, -38.0 + step], [-71.0, -71.0 + step / np.cos(np.radians(-38.0))])
+    assert haversine_km(-38.0, -71.0, -38.0 + step, -71.0 + step / np.cos(np.radians(-38.0))) == pytest.approx(1.204, abs=0.002)
+    assert sorted(fz.group_fires(diag).tolist()) == [0, 1]
+
 def test_groups_chain_links_and_a_gap_splits():
     # 0, 0.9, 1.8 km form one chain; 3.0 km is 1.2 km from the chain: a fire of its own
     lab = fz.group_fires(xy([0, 0.9, 1.8, 3.0], [0, 0, 0, 0]))

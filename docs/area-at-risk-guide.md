@@ -14,8 +14,8 @@ Written on 2026-11-15 on branch `feat/fire-zones`.
 | **Area of the cells in alert** | How many km² does the outlook flag today, and in which regions? | `backend/main.py` (`daily_area`), status line under the map |
 | **Expected area with activity** | Adding chance × cell area, about how many km² of cells will show a hotspot? | Same |
 | **Fires of the day before** | Where did the satellite see fire, grouped into fires? | `scripts/fire_zones.py`, red dots and rings on the map |
-| **Chance a fire keeps burning** | Will this fire still be detected tomorrow? | Same, in the tooltip and the list of fires |
-| **Zone of likely activity** | If it keeps burning, where will its next hotspots likely appear, and how large is that zone? | Same, blue bands on the map |
+| **Chance a fire is detected again** | Will the satellite see this fire again tomorrow? | Same, in the tooltip and the list of fires |
+| **Zone of likely activity** | If it is detected again, where will its next hotspots likely appear, and how large is that zone? | Same, blue bands on the map |
 
 None of these is burned area, a perimeter or a direction of spread. There are no burned-area labels in
 the project (`modeling-plan.md`, section 9).
@@ -55,8 +55,8 @@ A legend under the map explains every layer that is on. In short:
 Pointing at a red ring shows, for example:
 
 > **Fire of 145 hotspots on 2026-11-12** (Santiago del Estero)
-> Chance it is detected again on 2026-11-13: **80%** (fires of this size in 2013-2022).
-> If it is, 8 of 10 of its hotspots usually fall within 3.5 km of today's: a zone of 111 km². 9 of 10 within 5.9 km (231 km²).
+> Chance it is detected again on 2026-11-13: **79%** (fires of this size in 2013-2022).
+> If it is, 8 of 10 of its hotspots usually fall within 7.0 km of today's: a zone of 297 km². 9 of 10 within 12.9 km (772 km²).
 
 For a past day it also says what happened: whether the fire was detected again, and how many of its
 hotspots fell inside the 80% zone.
@@ -145,10 +145,10 @@ The full column contract is also in `daily-model-handoff.md`, section 7.
 
 | File | Covers |
 |---|---|
-| `tests/test_fire_zones.py` (13) | Grouping and its ids, size classes, union area, "active the day before", continuation and ties between fires, majority country, the table and its fallbacks, scores, the whole run on synthetic fires, that the table never reads the test years, that outage days are never scored |
+| `tests/test_fire_zones.py` (15) | Distances against the great circle (and the two cases of the review), grouping and its ids, size classes, union area, "active the day before", continuation and ties between fires, majority country, the table and its fallbacks, scores, the whole run on synthetic fires, that the table never reads the test years, that outage days are never scored |
 | `tests/test_api.py` (3 new, 1 changed) | Area per day and region against hand-computed cell areas, the zones endpoint and its filters, the point budget, the app without the zone files |
 
-`pytest` runs 143 tests in about 40 seconds; none needs the real data.
+`pytest` runs 145 tests in about 40 seconds; none needs the real data.
 
 ## 4. How to run it again
 
@@ -178,9 +178,10 @@ To check it: `risk/fire_zones.md` should show about 83% of next-day hotspots ins
 
 | | Value on 2023-2025 |
 |---|---|
-| Fires scored | 170,142 |
-| Chance of continuing | Calibrated: within 3.5 points of the observed share in every size class but one |
-| Brier score against one rate for all fires | 10.5% better |
-| Next-day hotspots inside the 50 / 80 / 90% zones | 55.5% / 83.6% / 92.5% |
+| Fires scored | 169,332 |
+| Chance of being detected again | Calibrated: within 4 points of the observed share in every size class but one |
+| Brier score against one rate for all fires | 10.6% better |
+| Next-day hotspots inside the 50 / 80 / 90% zones | 55.4% / 83.3% / 92.0% |
 | Chile | Zones too narrow: about 75% inside the 80% zone |
-| Live day (2026-11-13) | 289 fires; 12 with 50% or more; 80% zones add up to 4,016 km² |
+| Distances | On a sphere (`to_km`); a first version on a plane was wrong by up to 66% and was fixed before merging (`findings/10-fire-zones.md`) |
+| Live day (2026-11-13) | 283 fires; 12 with 50% or more; 80% zones add up to 4,054 km² |
