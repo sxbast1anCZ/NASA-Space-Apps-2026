@@ -1,9 +1,8 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Box, CellDetail, Daily, Rings, RiskCell, ZoneFire, Zones } from './api.ts'
-import { ZONE_BINS } from './api.ts'
-import { RISK_BINS } from './api.ts'
+import { FIRE_RED, RISK_BINS, ZONE_COLORS } from './api.ts'
 
 const riskBin = (p: number) => RISK_BINS.findLast((b) => p >= b.from)
 
@@ -54,13 +53,11 @@ function detailCard(d: CellDetail): HTMLElement {
   return card
 }
 
-// Fire zones are blue, apart from the yellow-to-red outlook (ZONE_BINS in api.ts).
-const zoneColor = (p: number) => ZONE_BINS.findLast((b) => p >= b.from)!.color
 // Bands of a zone, widest first; k is the index of the radius in a ZoneFire.
 const ZONE_BANDS = [
-  { pane: 'zone90', z: 410, opacity: 0.3, k: 7, color: '#9ecae1', edge: '' },
-  { pane: 'zone80', z: 411, opacity: 0.45, k: 6, color: '#4292c6', edge: '#08306b' },
-  { pane: 'zone50', z: 412, opacity: 0.55, k: 5, color: '#08519c', edge: '' },
+  { pane: 'zone90', z: 410, opacity: 0.3, k: 7, color: ZONE_COLORS.nearly, edge: '' },
+  { pane: 'zone80', z: 411, opacity: 0.45, k: 6, color: ZONE_COLORS.most, edge: ZONE_COLORS.edge },
+  { pane: 'zone50', z: 412, opacity: 0.55, k: 5, color: ZONE_COLORS.half, edge: '' },
 ] as const
 
 const escape = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
@@ -80,14 +77,22 @@ function zoneText(f: ZoneFire, z: Zones) {
   return lines.join('<br>')
 }
 
+/** Box around a fire's hotspots, widened by its 90% radius. */
+function fireBounds(f: ZoneFire, pts: [number, number][]): L.LatLngBoundsExpression {
+  const pad = f[7] / 111                       // the 90% radius, in degrees of latitude
+  const k = 1 / Math.cos((f[1] * Math.PI) / 180)
+  const lats = pts.map((p) => p[0]), lons = pts.map((p) => p[1])
+  return [[Math.min(...lats) - pad, Math.min(...lons) - pad * k], [Math.max(...lats) + pad, Math.max(...lons) + pad * k]]
+}
+
 /**
  * Map of Chile and Argentina. While `drawing` is on, dragging draws a rectangle and reports it.
  * `box` is the user's selection; `used` is the block of 0.25° cells the data really covers.
  * `risk` paints one square per cell; cells under 5% are left out to keep the map readable.
  * `daily` is the next-day outlook: the same squares, with an outline on the cells in alert and an arrow
  * where the wind blows to. `rings` shades the surroundings of the hotspots of the day before.
- * `zones` draws, for each fire of the day before, the 50, 80 and 90% zones of its next hotspots and a dot
- * with its chance of being detected again.
+ * `zones` draws each fire of the day before in red (its hotspots and a marker) and, in blue, the 50, 80
+ * and 90% zones where its next hotspots usually fall. `focus` zooms to one fire; `legend` goes under the map.
  * A click on a daily cell calls `onCell`; `detail` opens as a popup on its cell.
  * shortcut: mouse only, touch screens must type the coordinates; add pointer events if needed.
  */
@@ -100,6 +105,8 @@ export function MapPicker(props: {
   daily: Daily | null
   rings: Rings | null
   zones: Zones | null
+  focus: { id: number; n: number } | null // n changes on every request, so the same fire can be asked twice
+  legend?: ReactNode
   detail: CellDetail | null
   onCell: (lat: number, lon: number) => void
   cellDegrees: number
@@ -110,6 +117,7 @@ export function MapPicker(props: {
   const riskLayer = useRef<L.LayerGroup | null>(null)
   const ringLayer = useRef<L.LayerGroup | null>(null)
   const zoneLayer = useRef<L.LayerGroup | null>(null)
+  const pointsOf = useRef(new Map<number, [number, number][]>())
   const onDraw = useRef(props.onDraw)
   const onCell = useRef(props.onCell)
   // Outlines and wind arrows only when a cell is wide enough to hold them; far out they hide the colours.
@@ -129,6 +137,9 @@ export function MapPicker(props: {
     zoneLayer.current = L.layerGroup().addTo(m)
     // Fire dots in SVG on a pane over the cells: only the dots take the mouse, a click elsewhere reaches the cells.
     m.createPane('fires').style.zIndex = '450'
+    const hot = m.createPane('hotspots') // today's hotspots: over the zones, under the fire markers, no mouse
+    hot.style.zIndex = '440'
+    hot.style.pointerEvents = 'none'
     // Zones: one pane per band, drawn opaque and made see-through as a whole, so that overlapping circles
     // read as one flat area. They never take the mouse: clicks go through to the cells.
     for (const band of ZONE_BANDS) {
@@ -248,8 +259,13 @@ export function MapPicker(props: {
     const z = props.zones
     if (!z) return
     const byFire = new Map<number, ZoneFire>(z.fires.map((f) => [f[0], f]))
-    const pointsOf = new Map<number, [number, number][]>()
-    for (const [id, lat, lon] of z.points) pointsOf.set(id, [...(pointsOf.get(id) ?? []), [lat, lon]])
+    const byId = new Map<number, [number, number][]>()
+    for (const [id, lat, lon] of z.points) {
+      const list = byId.get(id)
+      if (list) list.push([lat, lon])
+      else byId.set(id, [[lat, lon]])
+    }
+    pointsOf.current = byId
     for (const band of ZONE_BANDS) {
       const renderer = L.canvas({ pane: band.pane })
       const circle = (lat: number, lon: number, km: number, color: string) =>
@@ -262,25 +278,27 @@ export function MapPicker(props: {
         if (f) circle(lat, lon, band.edge ? f[band.k] * 0.92 : f[band.k], band.color)
       }
     }
-    const zoomTo = (f: ZoneFire) => {
-      const pts = pointsOf.get(f[0]) ?? [[f[1], f[2]]]
-      const pad = f[7] / 111                       // the 90% radius, in degrees of latitude
-      const lats = pts.map((p) => p[0]), lons = pts.map((p) => p[1])
-      const k = 1 / Math.cos((f[1] * Math.PI) / 180)
-      map.current!.flyToBounds([[Math.min(...lats) - pad, Math.min(...lons) - pad * k], [Math.max(...lats) + pad, Math.max(...lons) + pad * k]],
-        { maxZoom: 13, padding: [20, 20] })
-    }
+    const hotspots = L.canvas({ pane: 'hotspots' })
+    for (const [, lat, lon] of z.points)
+      L.circleMarker([lat, lon], { renderer: hotspots, radius: 2.5, stroke: false, fillColor: FIRE_RED, fillOpacity: 0.9, interactive: false }).addTo(group)
     for (const f of z.fires) {
-      const [, lat, lon, hotspots, p] = f
+      const [id, lat, lon, hotspots] = f
       L.circleMarker([lat, lon], {
-        pane: 'fires', radius: Math.min(3 + Math.sqrt(hotspots) / 2, 8), color: '#fff', weight: 1.5,
-        fillColor: zoneColor(p), fillOpacity: 1,
+        pane: 'fires', radius: Math.min(5 + Math.sqrt(hotspots) / 2, 10), color: FIRE_RED, weight: 3,
+        fillColor: '#fff', fillOpacity: 0.85,
       })
         .bindTooltip(zoneText(f, z), { className: 'zone-tip' })
-        .on('click', () => zoomTo(f))
+        .on('click', () => map.current!.flyToBounds(fireBounds(f, byId.get(id) ?? [[lat, lon]]), { maxZoom: 13, padding: [20, 20] }))
         .addTo(group)
     }
   }, [props.zones])
+
+  useEffect(() => {
+    const z = props.zones
+    const f = props.focus && z?.fires.find((x) => x[0] === props.focus!.id)
+    if (!f) return
+    map.current!.flyToBounds(fireBounds(f, pointsOf.current.get(f[0]) ?? [[f[1], f[2]]]), { maxZoom: 13, padding: [20, 20] })
+  }, [props.focus, props.zones])
 
   useEffect(() => {
     const d = props.detail
@@ -294,5 +312,10 @@ export function MapPicker(props: {
     }
   }, [props.detail, props.cellDegrees])
 
-  return <div ref={el} className="map" aria-label="Map to choose the area of interest" />
+  return (
+    <div className="map-block">
+      <div ref={el} className="map" aria-label="Map to choose the area of interest" />
+      {props.legend}
+    </div>
+  )
 }

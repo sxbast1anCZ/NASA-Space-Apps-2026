@@ -1,8 +1,9 @@
 import type { EChartsOption } from 'echarts'
 import { useEffect, useMemo, useState } from 'react'
 import type { Box, Calendar, CellDetail, Daily, Meta, Month, Reference, Rings, RiskCell, Search, Zones } from './api.ts'
-import { errorText, getCalendar, getDaily, getDailyCell, getDailyHotspots, getDailyZones, getMeta, getRisk, RISK_BINS, saveFile, searchParams, ZONE_BINS } from './api.ts'
+import { errorText, getCalendar, getDaily, getDailyCell, getDailyHotspots, getDailyZones, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
 import { Chart } from './Chart.tsx'
+import { MapLegend } from './MapLegend.tsx'
 import { MapPicker } from './MapPicker.tsx'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -198,8 +199,9 @@ export default function App() {
   const [daily, setDaily] = useState<Daily | null>(null)
   const [showRings, setShowRings] = useState(false)
   const [rings, setRings] = useState<Rings | null>(null)
-  const [showZones, setShowZones] = useState(false)
+  const [showZones, setShowZones] = useState(true) // the fires of the day before and their zones
   const [zones, setZones] = useState<Zones | null>(null)
+  const [focus, setFocus] = useState<{ id: number; n: number } | null>(null)
   const [detail, setDetail] = useState<CellDetail | null>(null)
 
   useEffect(() => {
@@ -413,19 +415,39 @@ export default function App() {
                 </label>
                 <label className="check">
                   <input type="checkbox" checked={showZones} onChange={(e) => setShowZones(e.target.checked)} />
-                  Zones of likely activity around each fire of the day before
+                  Fires of the day before (red) and where they may show up next (blue)
                 </label>
                 {showZones && (
-                  <ul className="legend" aria-label="Chance that a fire is detected again">
-                    {ZONE_BINS.map((b) => <li key={b.label}><span className="dot" style={{ background: b.color }} />{b.label}</li>)}
-                  </ul>
+                  <details className="howto" open>
+                    <summary>How to find a fire</summary>
+                    <ol>
+                      <li>Choose the day above. <b>Latest day</b> shows the fires seen yesterday.</li>
+                      <li>Narrow the area: pick a country and a region, or draw a rectangle on the map.</li>
+                      <li>Click a fire in the list below, or a red ring on the map: the map zooms to it.</li>
+                      <li>Point at a red ring to see its chance of burning tomorrow and the size of its blue zone.</li>
+                    </ol>
+                  </details>
                 )}
-                {showZones && (
-                  <ul className="legend" aria-label="Zones of the next-day hotspots of a fire that keeps burning">
-                    <li><span style={{ background: '#08519c', opacity: 0.8 }} />Zone of half its next hotspots</li>
-                    <li><span style={{ background: '#4292c6', opacity: 0.7, borderColor: '#08306b' }} />8 of 10 (outlined)</li>
-                    <li><span style={{ background: '#9ecae1', opacity: 0.6 }} />9 of 10</li>
-                  </ul>
+                {zonesShown && zonesShown.fires.length > 0 && (
+                  <div className="fire-list">
+                    <p className="label">
+                      {full.format(zonesShown.fires.length)} fire{zonesShown.fires.length === 1 ? '' : 's'} on {zonesShown.seen_date} in {areaName}, largest first:
+                    </p>
+                    <ol>
+                      {zonesShown.fires.slice(0, 10).map((f) => (
+                        <li key={f[0]}>
+                          <button type="button" onClick={() => {
+                            setFocus({ id: f[0], n: Date.now() })
+                            document.querySelector('.map')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          }}>
+                            {!search.admin1 && <b>{f[14] ?? 'Unknown region'}: </b>}
+                            {full.format(f[3])} hotspot{f[3] === 1 ? '' : 's'}, {Math.round(f[4] * 100)}% chance of burning tomorrow
+                          </button>
+                        </li>
+                      ))}
+                    </ol>
+                    {zonesShown.fires.length > 10 && <p className="hint">{search.admin1 ? 'Draw a rectangle' : 'Choose a region or draw a rectangle'} to list the others.</p>}
+                  </div>
                 )}
               </>
             )}
@@ -472,7 +494,9 @@ export default function App() {
 
       <main>
         <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox}
-          risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null} zones={zonesShown}
+          risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null} zones={zonesShown} focus={focus}
+          legend={<MapLegend day={shown ? day : null} seen={zonesShown?.seen_date ?? null} rings={!!(day && showRings && rings)}
+            week={riskWeek && risk ? riskWeek : null} />}
           detail={detail?.date === day ? detail : null} onCell={showCell} cellDegrees={meta.cell_degrees} />
         {shown && daily && (
           <p className="hint" role="status">
@@ -503,14 +527,11 @@ export default function App() {
         {zonesShown && (
           <p className="hint" role="status">
             {zonesShown.summary.fires === 0 ? `No fires on ${zonesShown.seen_date ?? 'the day before'} in ${areaName}.`
-              : `${full.format(zonesShown.summary.fires)} fire${zonesShown.summary.fires === 1 ? '' : 's'} on ${zonesShown.seen_date} in ${areaName}; `
-                + `${full.format(zonesShown.summary.likely)} with a chance of 50% or more of being detected again on ${day} `
-                + `(about ${full.format(Math.round(zonesShown.summary.expected_continuing))} expected). `
-                + `Their 80% zones add up to ${full.format(zonesShown.summary.area80_km2)} km².`}
-            {' '}A fire here is a group of hotspots of one day closer than 1 km to each other.
-            {' '}Each zone is where 8 of 10 next-day hotspots of a fire that keeps burning fell in 2013-2022 (shaded at 50, 80 and 90%);
-            {' '}it is not burned area, a perimeter or a direction. Point at a dot for its numbers; click it to zoom to its zone (most are 1 to 4 km wide around the fire's hotspots).
-            {zonesShown.truncated && ' Too many fires for the whole area: the largest ones are shaded; choose a smaller area to see them all.'}
+              : `${full.format(zonesShown.summary.fires)} fire${zonesShown.summary.fires === 1 ? '' : 's'} seen on ${zonesShown.seen_date} in ${areaName}; `
+                + `${full.format(zonesShown.summary.likely)} with a chance of 50% or more of burning on ${day} (about `
+                + `${full.format(Math.round(zonesShown.summary.expected_continuing))} expected to keep burning). `
+                + `Their blue zones (8 of 10) add up to ${full.format(zonesShown.summary.area80_km2)} km².`}
+            {zonesShown.truncated && ' Too many fires for the whole area: only the largest ones are drawn. Choose a smaller area to see them all.'}
           </p>
         )}
         {riskWeek && risk && (

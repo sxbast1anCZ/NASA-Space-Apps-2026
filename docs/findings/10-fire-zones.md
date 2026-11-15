@@ -136,9 +136,11 @@ The largest, 145 hotspots in Santiago del Estero, has a chance of 80% and an 80%
 | `GET /api/risk/daily?date=` | Adds `area`: cells, cells in alert, km² of each, expected km², and the same by region |
 | `GET /api/risk/daily/zones?date=` | The fires of the day before in the selected area, largest first, with chance, radii, areas and what happened; their hotspots for the map (up to 6,000, largest fires first) |
 | Status line of the outlook | "The cells in alert cover X km² of Y km² (most in ...); adding chance times area, about Z km² of cells would show a hotspot. That is the area of the 0.25° cells, not burned area." Regions are named only for a box or a country |
-| Checkbox "Zones of likely activity" | A blue dot per fire, darker when it is more likely to be detected again, and its zones as flat bands around its hotspots: dark blue for half of its next-day hotspots, outlined for 8 of 10, light for 9 of 10. Pointing at a dot gives its numbers and, for past days, what happened; a click zooms to its zone. Zones never take the mouse, so the cells under them stay clickable |
+| Checkbox "Fires of the day before (red) and where they may show up next (blue)", on by default | Red: each hotspot of the day before as a dot, and each fire as a red ring (point at it for its numbers, click to zoom). Blue: its zones as flat bands, dark for half of its next-day hotspots, outlined for 8 of 10, light for 9 of 10. The zones never take the mouse, so the cells under them stay clickable |
+| "How to find a fire" and the list of fires | Four steps in the side panel, and the 10 largest fires of the selected area with their chance of burning tomorrow; a click zooms the map to the fire |
+| Legend under the map | Explains every layer that is on: the cells and their colours, the alert outline, hotspots, fires, the three blue bands, the purple rings |
 
-Blue keeps the fires apart from the yellow-to-red cells. The app starts without the zone files: the
+Red is what the satellite saw; blue is what may come next; yellow to red is the chance per cell. The app starts without the zone files: the
 zones are then empty.
 
 ## Limits

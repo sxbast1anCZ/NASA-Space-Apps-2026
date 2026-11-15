@@ -178,11 +178,6 @@ export const RISK_BINS = [
   { from: 0.75, label: 'over 75%', color: '#bd0026' },
 ]
 
-/** Dot of a fire: light when it is unlikely to be detected again, dark when it is likely. Blues, apart
- *  from the yellow-to-red outlook. */
-export const ZONE_BINS = [
-  { from: 0, color: '#c6dbef', label: 'Under 10%' },
-  { from: 0.1, color: '#6baed6', label: '10-25%' },
-  { from: 0.25, color: '#2171b5', label: '25-50%' },
-  { from: 0.5, color: '#08306b', label: '50% or more' },
-]
+/** Fire seen on the day before is red; where it may show up next is blue, apart from the yellow-to-red cells. */
+export const FIRE_RED = '#d7191c'
+export const ZONE_COLORS = { half: '#08519c', most: '#4292c6', edge: '#08306b', nearly: '#9ecae1' }
