@@ -116,15 +116,21 @@ python scripts/harmonize.py
 ```bash
 pip install -r requirements.txt
 cd frontend && npm install && npm run build && cd ..
-uvicorn backend.main:app --port 8000
+uvicorn backend.ui:app --port 8000
 ```
 
-Open http://localhost:8000. The API serves the built web app.
+Open http://localhost:8000. The API serves the built web app: Fireguard, a full-screen map with three
+modes. "Historia" shows the harmonized record since 2000, "Ahora" the hotspots of the last 14 days
+with wind, and "Pronóstico" where fire activity is most likely on the next day and the next weeks.
+The earlier calendar app, with the fire zones, stays at http://localhost:8000/#classic.
+`backend/ui.py` adds the endpoints of the map to `backend/main.py`; `uvicorn backend.main:app` serves
+the calendar app's API only. Towns near fire need `NASA_Data_Sources/geonames/cl_ar.tsv` (GeoNames
+cities5000, Chile and Argentina); without it the map says the town list is missing.
 
 The fire activity outlook on the map is optional: it appears when
 `NASA_Data_Sources/processed/risk/cells_weekly.parquet` exists (contract C3, written by `scripts/risk_model.py`).
 
-For development, run the API with `uvicorn backend.main:app --reload` and the web app with
+For development, run the API with `uvicorn backend.ui:app --reload` and the web app with
 `npm run dev` inside `frontend/` (it proxies `/api` to port 8000). API docs: http://localhost:8000/docs.
 Tests: `pytest`.
 
