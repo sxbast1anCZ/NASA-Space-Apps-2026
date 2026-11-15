@@ -1,6 +1,7 @@
 # NASA Space Apps 2026: harmonized MODIS and VIIRS hotspots
 
 What the challenge asks: `docs/challenge-requirements.md`. Conventions: `CONTRIBUTING.md`.
+What each document is for: `docs/README.md`.
 
 ## Project status
 
