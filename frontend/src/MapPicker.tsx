@@ -205,18 +205,24 @@ export function MapPicker(props: {
     }
   }, [props.drawing])
 
+  // The parent builds `used` anew on every render: compare the areas by value, or every click (a cell,
+  // a layer switched on) would zoom the map back out to the whole area.
+  const boxKey = props.box ? JSON.stringify(props.box) : ''
+  const usedKey = props.used ? JSON.stringify(props.used) : ''
   useEffect(() => {
+    const box: Box | null = boxKey ? JSON.parse(boxKey) : null
+    const used: Box | null = usedKey ? JSON.parse(usedKey) : null
     const group = layers.current!
     group.clearLayers()
-    if (props.used)
-      L.rectangle(toBounds(props.used), { color: '#D55E00', weight: 1, dashArray: '4 4', fill: false }).addTo(group)
-    if (props.box) {
-      L.rectangle(toBounds(props.box), { color: '#0072B2', weight: 2, fillOpacity: 0.08 }).addTo(group)
-      map.current!.fitBounds(toBounds(props.used ?? props.box), { padding: [30, 30], maxZoom: 9 })
-    } else if (props.used) {
-      map.current!.fitBounds(toBounds(props.used), { padding: [10, 10] })
+    if (used)
+      L.rectangle(toBounds(used), { color: '#D55E00', weight: 1, dashArray: '4 4', fill: false }).addTo(group)
+    if (box) {
+      L.rectangle(toBounds(box), { color: '#0072B2', weight: 2, fillOpacity: 0.08 }).addTo(group)
+      map.current!.fitBounds(toBounds(used ?? box), { padding: [30, 30], maxZoom: 9 })
+    } else if (used) {
+      map.current!.fitBounds(toBounds(used), { padding: [10, 10] })
     }
-  }, [props.box, props.used])
+  }, [boxKey, usedKey])
 
   useEffect(() => {
     const group = riskLayer.current!

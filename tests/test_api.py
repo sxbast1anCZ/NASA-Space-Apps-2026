@@ -83,12 +83,22 @@ def test_meta_reports_last_complete_day_and_regions(client):
 def test_calendar_sums_the_box_and_flags_estimated_months(client):
     body = client.get("/api/calendar", params=CHILE_BOX).json()
     assert month(body, 2024, 2)["hotspots"] == 10.0          # the Argentine cell is outside the box
+    # The record starts on 2010-02-05: its first month is partial and gets no ratio.
     assert month(body, 2010, 2) == {"year": 2010, "month": 2, "hotspots": 7.0, "raw": 2,
-                                    "estimated": True, "provisional": False, "partial": False,
-                                    "median": 0.0, "ratio": 8.0, "reliable": False}
+                                    "estimated": True, "provisional": False, "partial": True,
+                                    "median": 0.0, "ratio": None, "reliable": False}
     assert month(body, 2015, 6)["hotspots"] == 0.0            # months without detections are present
     assert body["cells"] == 1 and body["bounds"] == [-71.75, -33.25, -71.5, -33.0]
     assert body["median_by_month"][1] == 0.0                  # February: 1 reference year with fire out of 11
+
+
+def test_first_month_of_the_record_is_partial_only_there(client):
+    # The record starts on 2010-02-05: February 2010 holds 24 of its 28 days, so it gets no ratio.
+    first = client.get("/api/calendar", params=CHILE_BOX).json()["months"][0]
+    assert (first["year"], first["month"], first["partial"], first["ratio"]) == (2010, 2, True, None)
+    # A later month that opens the period asked for is complete in the data: it is not partial.
+    body = client.get("/api/calendar", params={**CHILE_BOX, "from": "2023-02-01", "to": "2023-12-31"}).json()
+    assert body["months"][0]["partial"] is False and body["months"][0]["ratio"] is not None
 
 
 def test_partial_month_is_compared_on_the_same_days(client):

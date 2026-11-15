@@ -382,13 +382,16 @@ def calendar(
         FROM cells WHERE {where} AND year(burn_date) BETWEEN ? AND ? GROUP BY 1, 2
     """, [*params, ref_years.start, last_year]).fetchall()}
 
-    # Every month of the range, including the ones without detections.
+    # Every month of the range, including the ones without detections. The first month of the record
+    # is partial too when the data starts after day 1 (the first burn_date is 2000-10-31).
     last_month_partial = end.day < cal.monthrange(end.year, end.month)[1]
+    first_month_partial = first.day > 1
     months = []
     y, m = start.year, start.month
     while (y, m) <= (end.year, end.month):
         hotspots, raw, provisional = found.get((y, m), (0.0, 0, False))
-        partial = (y, m) == (end.year, end.month) and last_month_partial
+        partial = ((y, m) == (end.year, end.month) and last_month_partial) or \
+                  ((y, m) == (first.year, first.month) and first_month_partial)
         months.append({
             "year": y, "month": m, "hotspots": round(hotspots, 1), "raw": raw,
             "estimated": date(y, m, 1) < VIIRS_START, "provisional": bool(provisional),
