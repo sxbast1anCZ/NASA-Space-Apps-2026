@@ -179,3 +179,13 @@ normal recent month look low most of the time.
 - The function in the notebook re-implements `scripts/harmonize.py` in order to change its parameters.
   It matches `cells_daily.parquet` within 0.031% per year (VIIRS years exactly), but it is a second copy
   of the method. If the method changes, update both.
+- **Numbers before the outage fill.** Every number in this study, and the notebook outputs, were computed
+  before `scripts/harmonize.py` started filling Suomi-NPP outage days with NOAA-20 (pull request 23, 39
+  days in 2022, 2024 and 2026). Against the current `cells_daily.parquet`, the notebook's copy of the
+  method is lower by 2.6% in 2022 and 4.8% in 2024 (all other years within 0.05%), so the 0.031% above
+  holds only for the series without the fill. With the fill, the mean for 2013-2025 is 204,729 instead
+  of 203,561 and the level ratio 1.338 instead of 1.345. Nothing else changes. Section 7 does not depend
+  on it, because the level gap is already in raw MODIS and in the Terra-only and Aqua-only runs, and the
+  fill touches only VIIRS-era years. The notebook was not re-run and the figures in sections 1 to 6 keep
+  the earlier values. Re-run `notebooks/03b_pre2012_level.ipynb` after adding the fill to its
+  `harmonized()` function if the exact figures matter.
