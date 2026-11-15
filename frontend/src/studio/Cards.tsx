@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts'
-import { ArrowDownRight, ArrowUpRight, Copy, Download, FileJson, Minus, Satellite } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CalendarRange, Copy, Download, FileJson, Minus, Satellite } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart } from '../Chart.tsx'
 import { INFERNO, RATIO_BINS, ratioHex } from './colors.ts'
@@ -329,6 +329,8 @@ export function Downloads({ c }: { c: Ctx }) {
           a.download = 'burn-calendar.json'; a.click(); URL.revokeObjectURL(a.href)
         } finally { setBusy(false) }
       }}><FileJson size={15} />{t.json}</button>
+      {/* The classic view lets the user choose the years of the calendar and of the CSV. */}
+      <a className="dl" href="#classic"><CalendarRange size={15} />{t.byPeriod}</a>
     </div>
   )
 }
