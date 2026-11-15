@@ -1,6 +1,6 @@
 # 10. Area at risk: cells in alert and zones around active fires
 
-Scripts: `scripts/fire_zones.py` (zones), `backend/main.py` (area of the cells in alert). Run on
+Scripts: `scripts/fire_zones.py` (zones), `backend/main.py` (area of the cells in alert). How to use it and how it is wired: `docs/area-at-risk-guide.md`. Run on
 2026-11-15 on the data downloaded on 2026-11-14. Every number below was computed from those files;
 statements marked **(inference)** are interpretation.
 

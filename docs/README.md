@@ -77,6 +77,7 @@ The `.png` files in `findings/` are the figures of those documents.
 | `findings/09-daily-model.md` | Results of the next-day model and why it is frozen | Current |
 | `daily-model-handoff.md` | **Technical handoff** of the next-day model: data, techniques, how to run it again, traps, next steps | Current |
 | `findings/10-fire-zones.md` | Area in alert and zones around active fires: method, scores on 2023-2025, limits | Current |
+| `area-at-risk-guide.md` | **How the area at risk is built and used**: the app, the script, the endpoints, how to run it again | Current |
 | `findings/08-risk-model.md` | The weekly outlook, which is older and has a different target | Current |
 
 ## Working on the project
@@ -96,5 +97,5 @@ The `.png` files in `findings/` are the figures of those documents.
 | What did we decide about X? | `eda-findings.md` |
 | What can and cannot be claimed in the pitch? | `eda-closing-plan.md`, and the "Limits" section of each findings file |
 | How was the next-day model trained, and how do I retrain it? | `daily-model-handoff.md` |
-| How much area is at risk, and where will an active fire show up tomorrow? | `findings/10-fire-zones.md` |
+| How much area is at risk, and where will an active fire show up tomorrow? | `area-at-risk-guide.md` (use), `findings/10-fire-zones.md` (results) |
 | What do the columns of this file mean? | `data-contracts.md`, `eda-runbook.md` |
