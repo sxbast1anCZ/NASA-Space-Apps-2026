@@ -26,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from sklearn.metrics import average_precision_score
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -155,19 +156,22 @@ def evaluate(df: pd.DataFrame, score_cols, min_recall: float) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def load(panel: Path, predictions: Path | None) -> tuple[pd.DataFrame, list[str]]:
+def load(panel: Path | str, predictions: Path | str | None) -> tuple[pd.DataFrame, list[str]]:
     """Tune and test rows of the panel, with one column per model of the predictions file."""
-    import pyarrow.parquet as pq
-
+    panel = Path(panel)
     wanted = KEYS + ["country", "admin1", "segment", "split", "fire", "new_cell", *BASELINES]
-    have = [c for c in wanted if c in pq.read_schema(panel).names]
+    try:
+        names = pq.read_schema(panel).names
+    except Exception:
+        names = pq.ParquetFile(panel).schema_arrow.names
+    have = [c for c in wanted if c in names]
     missing = {"burn_date", "cell_lat", "cell_lon", "country", "split", "fire"} - set(have)
     if missing:
         raise SystemExit(f"{panel} lacks {sorted(missing)} (docs/modeling-plan.md, section 4.1)")
     df = pd.read_parquet(panel, columns=have, filters=[("split", "in", ["tune", "test"])])
     df["burn_date"] = pd.to_datetime(df["burn_date"])
     score_cols = [c for c in BASELINES if c in df]
-    if predictions is not None and predictions.exists():
+    if predictions is not None and Path(predictions).exists():
         pred = pd.read_parquet(predictions)
         pred["burn_date"] = pd.to_datetime(pred["burn_date"])
         wide = pred.pivot(index=KEYS, columns="model", values="probability").reset_index()

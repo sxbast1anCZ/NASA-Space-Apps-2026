@@ -6,11 +6,11 @@ needs fewer alerts to reach the required recall on `tune` is kept, and it is use
 if it also beats the two baselines on `tune`. The `test` years are scored once, with the model
 fitted on `train` and the threshold chosen on `tune`, and nothing is chosen on them.
 
-Inputs (NASA_Data_Sources/processed/daily/, from scripts/daily_panel.py):
-    panel.parquet   section 4.1 of the plan. Rows with split `gap` (the first days of 2021 and 2023)
-                    are in no split: never used to choose or to score, but shown in the app.
-    live.parquet    the same columns for the day after the last complete day, with no target.
-                    Required: without it the app file would lose the current outlook.
+Input (NASA_Data_Sources/processed/daily/panel.parquet, from scripts/daily_panel.py; section 4.1 of
+the plan). Two kinds of rows are in no split:
+    gap     the first days of 2021 and 2023: never used to choose or to score, but shown in the app.
+    live    the day after the last complete day, with no target. Required for every country: without
+            them the app file would lose the current outlook.
 
 Outputs:
     daily/predictions.parquet     tune and test rows of both runs: burn_date, cell_lat, cell_lon,
@@ -145,7 +145,6 @@ def train_country(g: pd.DataFrame, live: pd.DataFrame, min_recall: float, max_ro
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--panel", type=Path, default=DATA / "daily" / "panel.parquet")
-    ap.add_argument("--live", type=Path, default=DATA / "daily" / "live.parquet")
     ap.add_argument("--no-live", action="store_true",
                     help="train and score without the live day; the app file will have no current outlook")
     ap.add_argument("--out-daily", type=Path, default=DATA / "daily")
@@ -163,20 +162,14 @@ def main(argv=None) -> None:
     if missing := sorted(set(needed) - set(names)):
         raise SystemExit(f"{args.panel} lacks {missing} (docs/modeling-plan.md, section 4.1)")
     columns = needed + feature_columns(names, calendar=True)
-    countries = pq.read_table(args.panel, columns=["country"])["country"].unique().to_pylist()
+    where = pq.read_table(args.panel, columns=["country", "split"]).to_pandas()
+    countries = where["country"].unique().tolist()
 
     # Checked before anything is trained or written: the app file must keep its current outlook.
-    live_columns = [c for c in columns if c not in ("split", "fire")]
-    if args.no_live:
-        live_all = pd.DataFrame(columns=live_columns)
-    elif not args.live.exists():
-        raise SystemExit(f"{args.live} not found: the app file would lose the live day. Build it with "
-                         "scripts/daily_panel.py, or pass --no-live to go on without it.")
-    else:
-        live_all = pd.read_parquet(args.live, columns=live_columns)
-        if absent := sorted(set(countries) - set(live_all["country"])):
-            raise SystemExit(f"{args.live} has no rows for {absent}: the app file would lose their live day.")
-    live_all["burn_date"] = pd.to_datetime(live_all["burn_date"])
+    with_live = set(where.loc[where["split"] == "live", "country"])
+    if not args.no_live and (absent := sorted(set(countries) - with_live)):
+        raise SystemExit(f"{args.panel} has no live rows for {absent}: the app file would lose the live day. "
+                         "Rebuild the panel with scripts/daily_panel.py, or pass --no-live to go on without it.")
 
     args.out_daily.mkdir(parents=True, exist_ok=True)
     args.out_risk.mkdir(parents=True, exist_ok=True)
@@ -184,7 +177,8 @@ def main(argv=None) -> None:
     for country in sorted(countries):   # one country in memory at a time
         g = pd.read_parquet(args.panel, columns=columns, filters=[("country", "==", country)])
         g["burn_date"] = pd.to_datetime(g["burn_date"])
-        pred, app, booster, summary = train_country(g, live_all[live_all["country"] == country],
+        is_live = g["split"] == "live"
+        pred, app, booster, summary = train_country(g[~is_live], g[is_live & (not args.no_live)],
                                                     args.min_recall, args.max_rounds)
         booster.save_model(str(args.out_daily / f"model_{country.lower()}.txt"))
         preds.append(pred), apps.append(app)

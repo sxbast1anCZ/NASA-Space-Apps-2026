@@ -17,9 +17,10 @@ CONTRACT = ["burn_date", "cell_lat", "cell_lon", "probability", "baseline_probab
 
 
 def make_panel(signal: bool = True, flat_features: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """(panel, live rows) as scripts/daily_panel.py writes them: two countries, 30 cells, 2019-2023.
+    """(labelled rows, live rows) with the columns scripts/daily_panel.py writes: two countries, 30 cells,
+    2019-2023. The panel file is both together.
 
-    The first 7 days of 2021 and 2023 have split `gap`. The live day is 2024-01-01, in its own frame.
+    The first 7 days of 2021 and 2023 have split `gap`. The live day is 2024-01-01, with no target.
 
     With `signal`, fire follows the features. Without, it follows something only the baselines know.
     """
@@ -69,10 +70,8 @@ def outputs(tmp_path_factory):
 
 
 def run(root: Path, panel: pd.DataFrame, live: pd.DataFrame | None, *extra: str) -> None:
-    panel.to_parquet(root / "panel.parquet")
-    if live is not None:
-        live.to_parquet(root / "live.parquet")
-    dt.main(["--panel", str(root / "panel.parquet"), "--live", str(root / "live.parquet"),
+    (panel if live is None else pd.concat([panel, live], ignore_index=True)).to_parquet(root / "panel.parquet")
+    dt.main(["--panel", str(root / "panel.parquet"),
              "--out-daily", str(root / "daily"), "--out-risk", str(root / "risk"), "--max-rounds", "60", *extra])
 
 
@@ -141,7 +140,7 @@ def test_gap_days_are_never_scored(outputs):
     assert test_rows == {(365 - 7) * 30}
 
 
-def test_a_missing_live_file_stops_before_the_app_file_is_replaced(tmp_path):
+def test_missing_live_rows_stop_before_the_app_file_is_replaced(tmp_path):
     panel, live = make_panel()
     (tmp_path / "risk").mkdir()
     (tmp_path / "risk" / "cells_daily.parquet").write_text("the file of the data lane")
@@ -185,7 +184,7 @@ def test_producer_then_consumer_keeps_every_date_of_the_app_file(tmp_path):
     app_file = tmp_path / "risk" / "cells_daily.parquet"
     before = pd.read_parquet(app_file)
 
-    dt.main(["--panel", str(tmp_path / "daily" / "panel.parquet"), "--live", str(tmp_path / "daily" / "live.parquet"),
+    dt.main(["--panel", str(tmp_path / "daily" / "panel.parquet"),
              "--out-daily", str(tmp_path / "daily"), "--out-risk", str(tmp_path / "risk"), "--max-rounds", "40"])
     after = pd.read_parquet(app_file)
 
