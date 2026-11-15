@@ -77,7 +77,8 @@ export default function Studio() {
   const [drawing, setDrawing] = useState(false)
   const [pick, setPick] = useState<Pick | null>(null)
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null)
-  const [panelOpen, setPanelOpen] = useState(true)
+  // On a phone the map comes first: the panel starts closed and opens as a sheet from the bottom.
+  const [panelOpen, setPanelOpen] = useState(() => typeof window === 'undefined' || window.innerWidth > 720)
   const [showAll, setShowAll] = useState(false)
   const [collapsed, setCollapsed] = useState<Partial<Record<CardId, boolean>>>({})
   const [moreLayers, setMoreLayers] = useState(false)
