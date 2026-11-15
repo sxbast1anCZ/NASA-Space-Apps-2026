@@ -83,7 +83,7 @@ lane at a time.
 | T5 Tests for the risk scripts | scripts | 45 min | medium |
 | T6 Re-run block 4 on harmonized data, fix notebooks 01 and 04 | notebooks | 1.25 h | medium |
 | T7 Population and fire regime in the app | app | 1 h | medium |
-| T8 Events: group hotspots into fires | scripts | 2 h | medium |
+| T8 Events: group hotspots into fires | scripts | 1.5 h left | medium. Partly done: `scripts/fire_zones.py` groups the hotspots of one day (`group_fires`, 1 km); linking days into events is not done |
 | T9 README pipeline section | docs | 15 min | low |
 
 Everything else in `docs/eda-closing-plan.md` (items B2 to B5, B7 and all of priority C) is **not** to

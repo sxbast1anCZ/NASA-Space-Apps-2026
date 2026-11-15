@@ -63,6 +63,7 @@ One findings file per block, each with its notebook in `notebooks/`:
 | `findings/07-population.md` | How many people live near the hotspots |
 | `findings/08-risk-model.md` | The weekly outlook: inputs, validation, what weather adds |
 | `findings/09-daily-model.md` | The next-day outlook: results, reasons, rings, wind, limits |
+| `findings/10-fire-zones.md` | Area at risk: km² of the cells in alert, and the chance and zone of each active fire for the next day |
 
 The `.png` files in `findings/` are the figures of those documents.
 
@@ -74,13 +75,15 @@ The `.png` files in `findings/` are the figures of those documents.
 | `modeling-plan.md` | The plan of the next-day model. **Section 0 is what was done**; sections 1 to 14 are the full brief (four models, three algorithms), which was not done | Section 0 current, the rest historical |
 | `findings/09-daily-model.md` | Results of the next-day model and why it is frozen | Current |
 | `daily-model-handoff.md` | **Technical handoff** of the next-day model: data, techniques, how to run it again, traps, next steps | Current |
+| `findings/10-fire-zones.md` | Area in alert and zones around active fires: method, scores on 2023-2025, limits | Current |
+| `area-at-risk-guide.md` | **How the area at risk is built and used**: the app, the script, the endpoints, how to run it again | Current |
 | `findings/08-risk-model.md` | The weekly outlook, which is older and has a different target | Current |
 
 ## Working on the project
 
 | Document | What it is | State |
 |---|---|---|
-| `agent-handoff.md` | Context, rules and task cards for AI agents | Tasks T1 to T4 are done; T5 to T9 are still open; the model work came after it |
+| `agent-handoff.md` | Context, rules and task cards for AI agents | Tasks T1 to T4 are done; T8 is half done (fires of one day); T5 to T9 are otherwise open; the model work came after it |
 
 ## Which document answers my question
 
@@ -93,4 +96,5 @@ The `.png` files in `findings/` are the figures of those documents.
 | What did we decide about X? | `eda-findings.md` |
 | What can and cannot be claimed in the pitch? | `eda-closing-plan.md`, and the "Limits" section of each findings file |
 | How was the next-day model trained, and how do I retrain it? | `daily-model-handoff.md` |
+| How much area is at risk, and where will an active fire show up tomorrow? | `area-at-risk-guide.md` (use), `findings/10-fire-zones.md` (results) |
 | What do the columns of this file mean? | `data-contracts.md`, `eda-runbook.md` |
