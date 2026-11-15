@@ -6,16 +6,19 @@ needs fewer alerts to reach the required recall on `tune` is kept, and it is use
 if it also beats the two baselines on `tune`. The `test` years are scored once, with the model
 fitted on `train` and the threshold chosen on `tune`, and nothing is chosen on them.
 
-Input:
-    NASA_Data_Sources/processed/daily/panel.parquet   from scripts/daily_panel.py (section 4.1 of the
-        plan). Rows with split `live` (no target) are the day after the last complete day.
+Inputs (NASA_Data_Sources/processed/daily/, from scripts/daily_panel.py):
+    panel.parquet   section 4.1 of the plan. Rows with split `gap` (the first days of 2021 and 2023)
+                    are in no split: never used to choose or to score, but shown in the app.
+    live.parquet    the same columns for the day after the last complete day, with no target.
+                    Required: without it the app file would lose the current outlook.
 
 Outputs:
     daily/predictions.parquet     tune and test rows of both runs: burn_date, cell_lat, cell_lon,
                                   model (`lgbm` or `lgbm_calendar`), probability
     daily/model_<country>.txt     the booster that scores the live day (refitted on every labelled year)
-    risk/cells_daily.parquet      test years and the live day, for the web app: burn_date, cell_lat,
-                                  cell_lon, probability, baseline_probability, alert
+    risk/cells_daily.parquet      test years (their gap days included) and the live day, for the web
+                                  app: burn_date, cell_lat, cell_lon, probability,
+                                  baseline_probability, alert
     risk/daily_model.json         per country: features, rounds, thresholds, which run was kept and why
     risk/daily_metrics.json, .md  from scripts/daily_eval.py
 
@@ -66,10 +69,14 @@ def flagged_share(p, threshold: float) -> float:
     return float((np.asarray(p) >= threshold).mean())
 
 
-def train_country(g: pd.DataFrame, min_recall: float, max_rounds: int = MAX_ROUNDS):
+def train_country(g: pd.DataFrame, live: pd.DataFrame, min_recall: float, max_rounds: int = MAX_ROUNDS):
     """Both runs for one country. Returns (predictions, app rows, booster for the live day, summary)."""
-    parts = {s: g[g["split"] == s] for s in ("train", "tune", "test", "live")}
-    train, tune, test, live = parts["train"], parts["tune"], parts["test"], parts["live"]
+    parts = {s: g[g["split"] == s] for s in ("train", "tune", "test")}
+    train, tune, test = parts["train"], parts["tune"], parts["test"]
+    # Gap days of the test years: shown in the app, never scored.
+    shown = g[(g["split"] == "test") | ((g["split"] == "gap")
+                                         & g["burn_date"].dt.year.isin(test["burn_date"].dt.year.unique()))]
+    parts.update(shown_in_app=shown, live=live)
     if train.empty or tune.empty or not tune["fire"].any():
         raise SystemExit(f"{g['country'].iloc[0]}: the panel needs train rows and tune rows with fire")
 
@@ -92,11 +99,14 @@ def train_country(g: pd.DataFrame, min_recall: float, max_rounds: int = MAX_ROUN
     # The model replaces the baselines only if it beats both on tune (plan, section 7).
     y = tune["fire"].to_numpy().astype(bool)
     near = tune["p_near"].to_numpy() >= 0.5
-    at_near_budget = run["p_tune"] >= de.threshold_for_share(run["p_tune"], max(near.mean(), 1 / len(tune)))
+    # Same cost: the model may flag at most as many tune rows as the rule, never more (ties are left out).
+    at_near_budget = run["p_tune"] >= de.threshold_within_budget(run["p_tune"], int(near.sum()))
     hist_share = flagged_share(tune["p_hist"], de.pick_threshold(y, tune["p_hist"], min_recall))
     checks = {
         "recall_at_alerts_of_p_near": float((at_near_budget & y).sum() / y.sum()),
         "recall_of_p_near": float((near & y).sum() / y.sum()),
+        "alerts_of_model_at_that_budget": int(at_near_budget.sum()),
+        "alerts_of_p_near": int(near.sum()),
         "flagged_share_at_recall": run["tune_flagged_share"],
         "flagged_share_of_p_hist_at_recall": hist_share,
     }
@@ -105,10 +115,10 @@ def train_country(g: pd.DataFrame, min_recall: float, max_rounds: int = MAX_ROUN
 
     # The live day is scored by the kept run, refitted on every year that has a target.
     feats = run["features"]
-    final = fit(g[g["split"] != "live"], feats, rounds=run["rounds"])
-    app = pd.concat([test, live])
+    final = fit(g, feats, rounds=run["rounds"])
+    app = pd.concat([shown, live])
     if use_model:
-        p = np.concatenate([run["booster"].predict(test[feats]) if len(test) else [],
+        p = np.concatenate([run["booster"].predict(shown[feats]) if len(shown) else [],
                             final.predict(live[feats]) if len(live) else []])
         alert = p >= run["threshold"]
     else:
@@ -135,6 +145,9 @@ def train_country(g: pd.DataFrame, min_recall: float, max_rounds: int = MAX_ROUN
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--panel", type=Path, default=DATA / "daily" / "panel.parquet")
+    ap.add_argument("--live", type=Path, default=DATA / "daily" / "live.parquet")
+    ap.add_argument("--no-live", action="store_true",
+                    help="train and score without the live day; the app file will have no current outlook")
     ap.add_argument("--out-daily", type=Path, default=DATA / "daily")
     ap.add_argument("--out-risk", type=Path, default=DATA / "risk")
     ap.add_argument("--min-recall", type=float, default=0.80)
@@ -152,13 +165,27 @@ def main(argv=None) -> None:
     columns = needed + feature_columns(names, calendar=True)
     countries = pq.read_table(args.panel, columns=["country"])["country"].unique().to_pylist()
 
+    # Checked before anything is trained or written: the app file must keep its current outlook.
+    live_columns = [c for c in columns if c not in ("split", "fire")]
+    if args.no_live:
+        live_all = pd.DataFrame(columns=live_columns)
+    elif not args.live.exists():
+        raise SystemExit(f"{args.live} not found: the app file would lose the live day. Build it with "
+                         "scripts/daily_panel.py, or pass --no-live to go on without it.")
+    else:
+        live_all = pd.read_parquet(args.live, columns=live_columns)
+        if absent := sorted(set(countries) - set(live_all["country"])):
+            raise SystemExit(f"{args.live} has no rows for {absent}: the app file would lose their live day.")
+    live_all["burn_date"] = pd.to_datetime(live_all["burn_date"])
+
     args.out_daily.mkdir(parents=True, exist_ok=True)
     args.out_risk.mkdir(parents=True, exist_ok=True)
     preds, apps, report = [], [], {"min_recall": args.min_recall, "countries": {}}
     for country in sorted(countries):   # one country in memory at a time
         g = pd.read_parquet(args.panel, columns=columns, filters=[("country", "==", country)])
         g["burn_date"] = pd.to_datetime(g["burn_date"])
-        pred, app, booster, summary = train_country(g, args.min_recall, args.max_rounds)
+        pred, app, booster, summary = train_country(g, live_all[live_all["country"] == country],
+                                                    args.min_recall, args.max_rounds)
         booster.save_model(str(args.out_daily / f"model_{country.lower()}.txt"))
         preds.append(pred), apps.append(app)
         report["countries"][country] = summary
