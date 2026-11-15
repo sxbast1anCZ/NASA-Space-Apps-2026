@@ -22,7 +22,9 @@ the rules and the open tasks. This section is only a summary.
   - The area at risk: km² of the cells in alert, and for each fire of the day before the chance it is
     detected again and the zone where its next hotspots usually fall (`scripts/fire_zones.py`). How
     it is built and used: `docs/area-at-risk-guide.md`; results and limits: `docs/findings/10-fire-zones.md`.
-  - Not built: a view of the current situation, burned area, perimeters, direction of spread.
+  - Fireguard, a full-screen map (`frontend/src/studio/`, `backend/ui.py`) with the history, the
+    last 14 days ("Ahora") and the outlook ("Pronóstico"). The calendar app stays at `/#classic`.
+  - Not built: burned area, perimeters, direction of spread.
 - **Geography:** Chile and Argentina only. **Deadline:** Sunday 2026-11-15, 12:00 (Chile time).
 
 How to build the data and run everything: `docs/eda-runbook.md`, then the scripts of
