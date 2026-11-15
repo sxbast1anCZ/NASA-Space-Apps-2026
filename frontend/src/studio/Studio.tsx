@@ -57,7 +57,10 @@ function FilterPanel({ lang, mode, value, onChange, onClose }: { lang: Lang; mod
 }
 
 export default function Studio() {
-  const [lang, setLang] = useState<Lang>((store.get('brasa.lang') as Lang) || 'es')
+  // English by default. Only a language the user picked is remembered, under a new key, so the Spanish
+  // that earlier versions saved on every visit does not stick.
+  const [lang, setLangState] = useState<Lang>((store.get('fireguard.lang') as Lang) || 'en')
+  const setLang = (l: Lang) => { store.set('fireguard.lang', l); setLangState(l) }
   const t = DICT[lang]
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (store.get('brasa.theme') as 'dark' | 'light')
     || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
@@ -115,7 +118,7 @@ export default function Studio() {
   const [windField, setWindField] = useState<WindField | null>(null)
   const [windErr, setWindErr] = useState<string | null>(null)
 
-  useEffect(() => { store.set('brasa.lang', lang); document.documentElement.lang = lang }, [lang])
+  useEffect(() => { document.documentElement.lang = lang }, [lang])
 
   useEffect(() => {
     api.meta().then((m) => {
@@ -380,7 +383,7 @@ export default function Studio() {
           {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
         </button>
         <div className="lang glass">
-          {(['es', 'en'] as Lang[]).map((l) => <button key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}
+          {(['en', 'es'] as Lang[]).map((l) => <button key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}
         </div>
       </header>
 
@@ -706,7 +709,7 @@ function Onboarding({ lang, onPick, setLang }: { lang: Lang; onPick: (id: Person
   return (
     <div className="onboard">
       <div className="onboard-box glass">
-        <div className="lang inline">{(['es', 'en'] as Lang[]).map((l) => <button key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}</div>
+        <div className="lang inline">{(['en', 'es'] as Lang[]).map((l) => <button key={l} className={l === lang ? 'on' : ''} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}</div>
         <div className="onboard-logo"><BrasaLogo size={64} /></div>
         <span className="eyebrow center">NASA Space Apps Challenge 2026 · Antofagasta</span>
         <h1>{t.who}</h1>
