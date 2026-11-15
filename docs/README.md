@@ -79,6 +79,12 @@ The `.png` files in `findings/` are the figures of those documents.
 | `area-at-risk-guide.md` | **How the area at risk is built and used**: the app, the script, the endpoints, how to run it again | Current |
 | `findings/08-risk-model.md` | The weekly outlook, which is older and has a different target | Current |
 
+## The submission
+
+| Document | What it is | State |
+|---|---|---|
+| `submission/` | Pitch, 7 slides, 30-second video script, base case, the two added values, API, install guide and a JSON manifest, with numbers taken from the findings | Current |
+
 ## Working on the project
 
 | Document | What it is | State |

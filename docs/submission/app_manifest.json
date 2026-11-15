@@ -1,0 +1,52 @@
+{
+  "name": "Fireguard",
+  "tagline": "Harmonized MODIS-VIIRS hotspot calendar and next-day outlook for Chile and Argentina",
+  "challenge": "Harmonization of MODIS and VIIRS Hot Spots",
+  "event": "NASA Space Apps Challenge 2026",
+  "local_event": "Antofagasta, Chile",
+  "repository": "https://github.com/sxbast1anCZ/NASA-Space-Apps-2026",
+  "geography": ["Chile", "Argentina"],
+  "temporal_coverage": {"start_date": "2000-11-01", "live_day": "2026-11-13"},
+  "data": {
+    "firms_detections": 8042380,
+    "kept_after_quality_filter": 7000520,
+    "cell_degrees": 0.25,
+    "burn_day": "06:00 to 06:00 local solar time"
+  },
+  "modules": {
+    "base_case": {
+      "name": "Harmonized burn calendar",
+      "method": "MODIS times a factor per region, calendar month and pass (2012-2021), shrunk towards the country factor; one satellite per period",
+      "region_month_wape_loyo": {"argentina": 0.139, "chile": 0.240},
+      "yearly_total_error_loyo": {"argentina": 0.021, "chile": 0.053}
+    },
+    "added_value_1": {
+      "name": "Next-day outlook",
+      "algorithm": "One LightGBM per country; TreeSHAP reasons; Open-Meteo wind for the live day (context, not a feature)",
+      "test_years": "2023-2025",
+      "recall": {"argentina": 0.780, "chile": 0.791},
+      "precision": {"argentina": 0.159, "chile": 0.088},
+      "pr_auc": {"argentina": 0.359, "chile": 0.269},
+      "best_baseline_pr_auc": {"argentina": 0.196, "chile": 0.150},
+      "cells_flagged_share": "about 0.12"
+    },
+    "added_value_2": {
+      "name": "Area at risk and zones around active fires",
+      "algorithm": "Hotspots linked within 1 km on a sphere; chance of being detected again (within 2 km) and 50/80/90% radii per size class, fitted on 2013-2022",
+      "test_years": "2023-2025",
+      "share_inside_r80": 0.833,
+      "not": ["burned area", "perimeter", "direction of spread"]
+    }
+  },
+  "endpoints": {
+    "meta": "/api/meta",
+    "calendar": "/api/calendar",
+    "hotspots_csv": "/api/hotspots.csv",
+    "weekly_risk": "/api/risk",
+    "daily_risk": "/api/risk/daily",
+    "daily_cell": "/api/risk/daily/cell",
+    "daily_hotspots": "/api/risk/daily/hotspots",
+    "fire_zones": "/api/risk/daily/zones"
+  },
+  "tests": {"total": 149, "passing": 149, "checked_on": "2026-11-15"}
+}
