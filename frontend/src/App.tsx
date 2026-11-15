@@ -31,7 +31,7 @@ function notes(m: Month) {
   return [
     m.estimated && 'estimated from MODIS',
     m.provisional && 'provisional data',
-    m.partial && 'month not finished',
+    m.partial && 'month not complete in the data',
     !m.partial && !m.reliable && 'reference too small to compare (median under 10)',
   ].filter(Boolean)
 }
@@ -149,7 +149,7 @@ function calendarCsv(data: Calendar) {
 
 function KeyFigures({ data }: { data: Calendar }) {
   const c = data.current
-  const days = c.days >= 28 && !data.months.at(-1)?.partial ? '' : `1–${c.days} `
+  const days = c.first_day === 1 && c.days >= 28 && !data.months.at(-1)?.partial ? '' : `${c.first_day}–${c.days} `
   const byMonth = MONTHS.map((_, i) =>
     data.months.filter((m) => m.month === i + 1 && !m.partial).reduce((sum, m) => sum + m.hotspots, 0))
   const peak = byMonth.indexOf(Math.max(...byMonth))
@@ -574,12 +574,12 @@ export default function App() {
                 <p className="hint">
                   Hotspots in VIIRS-equivalent units, by calendar year. Days run from 06:00 to 06:00 local solar time.
                   Before {MONTHS[1]} 2012 the counts are MODIS detections scaled to the VIIRS level: estimates, within
-                  about 14% (Argentina) and 24% (Chile) for a region and month. * marks a month that is not finished.
+                  about 14% (Argentina) and 24% (Chile) for a region and month. * marks a month the data do not cover in full (the first and the current one).
                 </p>
                 <p className="hint">
                   Compared with the median: (hotspots + 1) / (median + 1), where the median is that of the same
                   month in the reference years, {referenceYears(data.reference)}, leaving out the year itself.
-                  A month whose median is under 10, or that is not finished, shows its count with no colour.
+                  A month whose median is under 10, or that the data do not cover in full, shows its count with no colour.
                 </p>
               </section>
 

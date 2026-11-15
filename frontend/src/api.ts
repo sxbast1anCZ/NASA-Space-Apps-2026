@@ -108,6 +108,7 @@ export type Calendar = {
   current: {
     year: number
     month: number
+    first_day: number // 1, or the first day of data when the period ends in the first month of the record
     days: number
     hotspots: number
     median: number | null
