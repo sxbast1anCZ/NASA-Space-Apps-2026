@@ -1,7 +1,7 @@
 import type { EChartsOption } from 'echarts'
 import { useEffect, useMemo, useState } from 'react'
-import type { Box, Calendar, CellDetail, Daily, Meta, Month, Reference, Rings, RiskCell, Search } from './api.ts'
-import { errorText, getCalendar, getDaily, getDailyCell, getDailyHotspots, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
+import type { Box, Calendar, CellDetail, Daily, Meta, Month, Reference, Rings, RiskCell, Search, Zones } from './api.ts'
+import { errorText, getCalendar, getDaily, getDailyCell, getDailyHotspots, getDailyZones, getMeta, getRisk, RISK_BINS, saveFile, searchParams, ZONE_BINS } from './api.ts'
 import { Chart } from './Chart.tsx'
 import { MapPicker } from './MapPicker.tsx'
 
@@ -198,6 +198,8 @@ export default function App() {
   const [daily, setDaily] = useState<Daily | null>(null)
   const [showRings, setShowRings] = useState(false)
   const [rings, setRings] = useState<Rings | null>(null)
+  const [showZones, setShowZones] = useState(false)
+  const [zones, setZones] = useState<Zones | null>(null)
   const [detail, setDetail] = useState<CellDetail | null>(null)
 
   useEffect(() => {
@@ -257,6 +259,17 @@ export default function App() {
     }
   }, [day, search, showRings])
 
+  useEffect(() => {
+    if (!search || !day || !showZones) return
+    let stale = false
+    getDailyZones(day, search)
+      .then((z) => !stale && setZones(z))
+      .catch((e: Error) => !stale && setError(e.message))
+    return () => {
+      stale = true
+    }
+  }, [day, search, showZones])
+
   const calendar = useMemo(() => data && calendarOption(data, view), [data, view])
   const years = useMemo(() => data && yearsOption(data), [data])
   const season = useMemo(() => data && seasonOption(data), [data])
@@ -302,6 +315,9 @@ export default function App() {
   const dayKnown = days.includes(day)
   const shown = dayKnown && daily?.date === day ? daily : null // never the cells of another day
   const alerts = shown?.cells.filter((c) => c[4] === 1).length ?? 0
+  const zonesShown = day && showZones && zones?.date === day ? zones : null
+  // Regions only for a box or a country: with one region chosen, its border cells would name the neighbours.
+  const topRegions = search.admin1 ? [] : (shown?.area?.regions ?? []).filter((r) => r.alert_km2 > 0).slice(0, 3)
   const showCell = (lat: number, lon: number) =>
     getDailyCell(day, lat, lon).then(setDetail).catch((e: Error) => setError(e.message))
 
@@ -395,6 +411,15 @@ export default function App() {
                   <input type="checkbox" checked={showRings} onChange={(e) => setShowRings(e.target.checked)} />
                   Shade the surroundings of the hotspots of the day before
                 </label>
+                <label className="check">
+                  <input type="checkbox" checked={showZones} onChange={(e) => setShowZones(e.target.checked)} />
+                  Zones of likely activity around each fire of the day before
+                </label>
+                {showZones && (
+                  <ul className="legend" aria-label="Chance that a fire is detected again">
+                    {ZONE_BINS.map((b) => <li key={b.label}><span className="dot" style={{ background: b.color }} />{b.label}</li>)}
+                  </ul>
+                )}
               </>
             )}
             <p className="hint">
@@ -440,7 +465,7 @@ export default function App() {
 
       <main>
         <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox}
-          risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null}
+          risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null} zones={zonesShown}
           detail={detail?.date === day ? detail : null} onCell={showCell} cellDegrees={meta.cell_degrees} />
         {shown && daily && (
           <p className="hint" role="status">
@@ -448,6 +473,14 @@ export default function App() {
             {daily.cells.length === 0 ? 'no cells with fire history here.'
               : `${full.format(alerts)} of ${full.format(daily.cells.length)} cells are in alert; `
                 + `the highest chance is ${Math.round(Math.max(...daily.cells.map((c) => c[2])) * 100)}%.`}
+            {shown.area && shown.area.cells > 0 && (
+              <>
+                {' '}The cells in alert cover {full.format(shown.area.alert_km2)} km² of {full.format(shown.area.cells_km2)} km²
+                {topRegions.length > 0 && ` (most in ${topRegions.map((r) => `${r.admin1}, ${full.format(r.alert_km2)} km²`).join('; ')})`};
+                {' '}adding chance times area, about {full.format(shown.area.expected_km2)} km² of cells would show a hotspot.
+                {' '}That is the area of the 0.25° cells, not burned area.
+              </>
+            )}
             {daily.wind.length > 0 && ' Zoom in to see the outline of the cells in alert and arrows for where the wind blows to that day (weather data by Open-Meteo.com); the arrows are not a forecast of spread.'}
             {' '}No alert does not mean no fire: clouds, small or short fires and the hours of the satellite passes can hide one.
           </p>
@@ -458,6 +491,19 @@ export default function App() {
             In past years, {rings.rings.map((r) => `${Math.round(r.share * 100)}% of the hotspots of the next day fell within ${r.km} km`).join(', ')}
             {' '}of a hotspot of the day before. It is where fire fell before, not a forecast of a perimeter.
             {rings.truncated && ' Too many hotspots for the whole area: choose a smaller one to see them all.'}
+          </p>
+        )}
+        {zonesShown && (
+          <p className="hint" role="status">
+            {zonesShown.summary.fires === 0 ? `No fires on ${zonesShown.seen_date ?? 'the day before'} in ${areaName}.`
+              : `${full.format(zonesShown.summary.fires)} fire${zonesShown.summary.fires === 1 ? '' : 's'} on ${zonesShown.seen_date} in ${areaName}; `
+                + `${full.format(zonesShown.summary.likely)} with a chance of 50% or more of being detected again on ${day} `
+                + `(about ${full.format(Math.round(zonesShown.summary.expected_continuing))} expected). `
+                + `Their 80% zones add up to ${full.format(zonesShown.summary.area80_km2)} km².`}
+            {' '}A fire here is a group of hotspots of one day closer than 1 km to each other.
+            {' '}Each zone is where 8 of 10 next-day hotspots of a fire that keeps burning fell in 2013-2022 (shaded at 50, 80 and 90%);
+            {' '}it is not burned area, a perimeter or a direction. Point at a dot for its numbers. Zoom in: most zones are 1 to 4 km wide.
+            {zonesShown.truncated && ' Too many fires for the whole area: the largest ones are shaded; choose a smaller area to see them all.'}
           </p>
         )}
         {riskWeek && risk && (

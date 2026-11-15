@@ -24,7 +24,8 @@ show the app.
 | `scripts/daily_eval.py` | Thresholds, confusion matrices, scores and breakdowns. `daily_train.py` calls it; it also runs alone | panel, predictions | `risk/daily_metrics.json`, `risk/daily_metrics.md` |
 | `scripts/daily_explain.py` | Reasons of each alert, from SHAP values | panel, `daily/model_<country>.txt`, `risk/daily_model.json`, `risk/cells_daily.parquet` | `risk/cells_daily_reasons.parquet` |
 | `scripts/daily_wind.py` | Wind of the live day for the cells in alert (Open-Meteo, needs network) | `risk/cells_daily.parquet` | `risk/wind_live.parquet` |
-| `backend/main.py`, `frontend/src/` | The "Next-day outlook" section of the web app | the three files in `risk/` | |
+| `scripts/fire_zones.py` | Groups the hotspots of each day into fires; for each one, the chance it is detected again the next day and the zones (50, 80, 90%) where its next hotspots fall. Not a model: a table fitted on 2013-2022 (`docs/findings/10-fire-zones.md`) | `harmonized/hotspots_kept.parquet`, `quality/outage_days.csv` | `risk/fire_zones.parquet`, `risk/fire_zone_points.parquet`, `risk/fire_zones.json`, `risk/fire_zones.md` |
+| `backend/main.py`, `frontend/src/` | The "Next-day outlook" section of the web app, with the area in alert and the fire zones | the files in `risk/` | |
 
 Tests: `tests/test_daily_panel.py`, `test_daily_train.py`, `test_daily_eval.py`, `test_daily_explain.py`,
 `test_daily_wind.py`, and the daily part of `test_api.py`. `pytest` runs 127 tests in about 10 seconds;
@@ -198,6 +199,7 @@ python scripts/daily_panel.py      # panel, and the app file with the baseline
 python scripts/daily_train.py      # models, metrics, and the app file with the model
 python scripts/daily_explain.py    # reasons of the alerts
 python scripts/daily_wind.py       # wind of the live day (network)
+python scripts/fire_zones.py       # fires of each day and their zones (independent of the four above)
 ```
 
 Order matters: `daily_panel.py` writes the app file with the baseline, so the three scripts after it
@@ -240,8 +242,17 @@ day: 5,337,042 rows, 1,079 days. Days of a satellite outage are absent, and so i
 `risk/wind_live.parquet`: the alerts of the live day (900 rows), with `wind_from_deg`, `downwind_deg`,
 `wind_max_kmh`, `gust_max_kmh`, `rh_min_pct`, `tmax_c`.
 
-Endpoints, in `backend/main.py`: `/api/meta` (`risk_days`), `/api/risk/daily`, `/api/risk/daily/cell`,
-`/api/risk/daily/hotspots`. The app starts without the files; the section then does not appear.
+`risk/fire_zones.parquet`: one row per fire of day D, keyed by the predicted day `burn_date` = D+1 (and
+`seen_date` = D), from 2023 to the live day: `fire_id`, `lat`, `lon` (centre), `country`, `admin1`,
+`hotspots`, `frp_sum_mw`, `size_class`, `active` (fire the day before, null if not observed),
+`p_continue`, `r50_km`, `r80_km`, `r90_km`, `area50_km2`, `area80_km2`, `area90_km2`, and what happened:
+`continued`, `next_hotspots`, `next_in_r80` (null for the live day and when D+1 was an outage day).
+`risk/fire_zone_points.parquet`: `burn_date`, `fire_id`, `lat`, `lon` of its hotspots, thinned to 0.002°.
+
+Endpoints, in `backend/main.py`: `/api/meta` (`risk_days`), `/api/risk/daily` (with `area`: km2 of the
+cells in alert and probability times cell area, by region), `/api/risk/daily/cell`,
+`/api/risk/daily/hotspots`, `/api/risk/daily/zones`. The app starts without the files; the section then
+does not appear, and without the zone files the zones are empty.
 
 ## 8. Things that will bite
 

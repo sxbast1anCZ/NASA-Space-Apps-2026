@@ -1,7 +1,8 @@
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useEffect, useRef, useState } from 'react'
-import type { Box, CellDetail, Daily, Rings, RiskCell } from './api.ts'
+import type { Box, CellDetail, Daily, Rings, RiskCell, ZoneFire, Zones } from './api.ts'
+import { ZONE_BINS } from './api.ts'
 import { RISK_BINS } from './api.ts'
 
 const riskBin = (p: number) => RISK_BINS.findLast((b) => p >= b.from)
@@ -53,12 +54,34 @@ function detailCard(d: CellDetail): HTMLElement {
   return card
 }
 
+// Fire zones are blue, apart from the yellow-to-red outlook (ZONE_BINS in api.ts).
+const zoneColor = (p: number) => ZONE_BINS.findLast((b) => p >= b.from)!.color
+
+const escape = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+const km = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString('en'))
+
+function zoneText(f: ZoneFire, z: Zones) {
+  const [, , , hotspots, p, , r80, r90, , a80, a90, continued, next, inside, region] = f
+  const lines = [
+    `<b>Fire of ${hotspots} hotspot${hotspots === 1 ? '' : 's'} on ${z.seen_date}</b>${region ? ` (${escape(region)})` : ''}`,
+    `Chance it is detected again on ${z.date}: <b>${Math.round(p * 100)}%</b> (fires of this size in 2013-2022).`,
+    `If it is, 8 of 10 of its hotspots usually fall within ${km(r80)} km of today's: a zone of ${km(a80)} km². `
+      + `9 of 10 within ${km(r90)} km (${km(a90)} km²).`,
+  ]
+  if (continued === true) lines.push(`What happened: detected again with ${next} hotspot${next === 1 ? '' : 's'}, ${inside} inside the 80% zone.`)
+  if (continued === false) lines.push('What happened: not detected again the next day.')
+  lines.push('<i>Where its next hotspots usually fall, not burned area or a perimeter.</i>')
+  return lines.join('<br>')
+}
+
 /**
  * Map of Chile and Argentina. While `drawing` is on, dragging draws a rectangle and reports it.
  * `box` is the user's selection; `used` is the block of 0.25° cells the data really covers.
  * `risk` paints one square per cell; cells under 5% are left out to keep the map readable.
  * `daily` is the next-day outlook: the same squares, with an outline on the cells in alert and an arrow
  * where the wind blows to. `rings` shades the surroundings of the hotspots of the day before.
+ * `zones` draws, for each fire of the day before, the 50, 80 and 90% zones of its next hotspots and a dot
+ * with its chance of being detected again.
  * A click on a daily cell calls `onCell`; `detail` opens as a popup on its cell.
  * shortcut: mouse only, touch screens must type the coordinates; add pointer events if needed.
  */
@@ -70,6 +93,7 @@ export function MapPicker(props: {
   risk: RiskCell[] | null
   daily: Daily | null
   rings: Rings | null
+  zones: Zones | null
   detail: CellDetail | null
   onCell: (lat: number, lon: number) => void
   cellDegrees: number
@@ -79,6 +103,7 @@ export function MapPicker(props: {
   const layers = useRef<L.LayerGroup | null>(null)
   const riskLayer = useRef<L.LayerGroup | null>(null)
   const ringLayer = useRef<L.LayerGroup | null>(null)
+  const zoneLayer = useRef<L.LayerGroup | null>(null)
   const onDraw = useRef(props.onDraw)
   const onCell = useRef(props.onCell)
   // Outlines and wind arrows only when a cell is wide enough to hold them; far out they hide the colours.
@@ -95,6 +120,9 @@ export function MapPicker(props: {
     }).addTo(m)
     ringLayer.current = L.layerGroup().addTo(m) // under the cells
     riskLayer.current = L.layerGroup().addTo(m) // under the selection outlines
+    zoneLayer.current = L.layerGroup().addTo(m)
+    // Fire dots in SVG on a pane over the cells: only the dots take the mouse, a click elsewhere reaches the cells.
+    m.createPane('fires').style.zIndex = '450'
     layers.current = L.layerGroup().addTo(m)
     map.current = m
     m.on('zoomend', () => setClose(m.getZoom() >= DETAIL_ZOOM))
@@ -199,6 +227,30 @@ export function MapPicker(props: {
     for (const [lat, lon] of props.rings.points)
       L.circleMarker([lat, lon], { renderer, radius: 2, stroke: false, fillColor: '#3b0a12', fillOpacity: 0.9, interactive: false }).addTo(group)
   }, [props.rings])
+
+  useEffect(() => {
+    const group = zoneLayer.current!
+    group.clearLayers()
+    const z = props.zones
+    if (!z) return
+    const renderer = L.canvas()
+    const byFire = new Map<number, ZoneFire>(z.fires.map((f) => [f[0], f]))
+    // 90% zone first, then 80% and 50%: the fills add up and the map gets darker where it is most likely.
+    for (const k of [7, 6, 5] as const)
+      for (const [id, lat, lon] of z.points) {
+        const f = byFire.get(id)
+        if (f) L.circle([lat, lon], { renderer, radius: f[k] * 1000, stroke: false, fillColor: '#08519c', fillOpacity: 0.25, interactive: false }).addTo(group)
+      }
+    for (const f of z.fires) {
+      const [, lat, lon, hotspots, p] = f
+      L.circleMarker([lat, lon], {
+        pane: 'fires', radius: Math.min(3 + Math.sqrt(hotspots), 14), color: '#08306b', weight: 1,
+        fillColor: zoneColor(p), fillOpacity: 0.95,
+      })
+        .bindTooltip(zoneText(f, z), { className: 'zone-tip' })
+        .addTo(group)
+    }
+  }, [props.zones])
 
   useEffect(() => {
     const d = props.detail

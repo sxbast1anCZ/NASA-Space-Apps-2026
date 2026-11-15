@@ -28,7 +28,16 @@ export type RiskCell = [number, number, number, number]
 export type DailyCell = [number, number, number, number, number]
 /** [cell_lat, cell_lon, direction the wind blows to in degrees, maximum speed in km/h] */
 export type WindCell = [number, number, number, number]
-export type Daily = { date: string; cells: DailyCell[]; wind: WindCell[] }
+/** Area of the cells of the outlook in km2: of all, of those in alert, and probability times area. */
+export type DailyArea = {
+  cells: number
+  alert_cells: number
+  cells_km2: number
+  alert_km2: number
+  expected_km2: number // area of the cells where a hotspot would be seen, on average: not burned area
+  regions: { country: string; admin1: string; cells: number; alert_cells: number; alert_km2: number; expected_km2: number }[]
+}
+export type Daily = { date: string; cells: DailyCell[]; wind: WindCell[]; area: DailyArea }
 
 export type CellDetail = {
   date: string
@@ -51,6 +60,22 @@ export type Rings = {
   points: [number, number][]
   truncated: boolean
   rings: { km: number; share: number }[]
+}
+
+/**
+ * [fire_id, lat, lon, hotspots, chance it is detected again, r50, r80, r90 (km), area50, area80, area90 (km2),
+ *  continued (null for the live day), its hotspots the next day, those inside the 80% zone, region]
+ */
+export type ZoneFire = [number, number, number, number, number, number, number, number, number, number, number,
+  boolean | null, number | null, number | null, string | null]
+/** Fires of the day before the predicted day and the zones where their next hotspots usually fall. */
+export type Zones = {
+  date: string
+  seen_date: string | null
+  fires: ZoneFire[]
+  points: [number, number, number][] // [fire_id, lat, lon]
+  truncated: boolean
+  summary: { fires: number; likely: number; expected_continuing: number; area80_km2: number }
 }
 
 export type Month = {
@@ -132,6 +157,7 @@ function areaParams(s: Search, date: string) {
 }
 export const getDaily = (date: string, s: Search) => get<Daily>(`/api/risk/daily?${areaParams(s, date)}`)
 export const getDailyHotspots = (date: string, s: Search) => get<Rings>(`/api/risk/daily/hotspots?${areaParams(s, date)}`)
+export const getDailyZones = (date: string, s: Search) => get<Zones>(`/api/risk/daily/zones?${areaParams(s, date)}`)
 export const getDailyCell = (date: string, lat: number, lon: number) =>
   get<CellDetail>(`/api/risk/daily/cell?date=${date}&cell_lat=${lat}&cell_lon=${lon}`)
 
@@ -150,4 +176,13 @@ export const RISK_BINS = [
   { from: 0.25, label: '25 to 50%', color: '#fd8d3c' },
   { from: 0.5, label: '50 to 75%', color: '#f03b20' },
   { from: 0.75, label: 'over 75%', color: '#bd0026' },
+]
+
+/** Dot of a fire: light when it is unlikely to be detected again, dark when it is likely. Blues, apart
+ *  from the yellow-to-red outlook. */
+export const ZONE_BINS = [
+  { from: 0, color: '#c6dbef', label: 'Under 10%' },
+  { from: 0.1, color: '#6baed6', label: '10-25%' },
+  { from: 0.25, color: '#2171b5', label: '25-50%' },
+  { from: 0.5, color: '#08306b', label: '50% or more' },
 ]

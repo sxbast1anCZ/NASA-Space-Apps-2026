@@ -1,5 +1,6 @@
 """API tests on a tiny synthetic dataset with the real schemas (outputs of scripts/harmonize.py)."""
 
+import math
 import sys
 from pathlib import Path
 
@@ -271,5 +272,70 @@ def test_daily_hotspots_are_the_day_before_from_the_satellite_of_the_outlook(dai
 
 def test_app_works_without_the_daily_files(client):
     assert client.get("/api/meta").json()["risk_days"] == []
-    assert client.get("/api/risk/daily", params={"date": "2024-02-03"}).json() == {"date": "2024-02-03", "cells": [], "wind": []}
+    body = client.get("/api/risk/daily", params={"date": "2024-02-03"}).json()
+    assert (body["date"], body["cells"], body["wind"]) == ("2024-02-03", [], [])
+    assert body["area"] == {"cells": 0, "alert_cells": 0, "cells_km2": 0, "alert_km2": 0, "expected_km2": 0,
+                            "regions": []}
     assert client.get("/api/risk/daily/cell", params=VALPARAISO).status_code == 404
+    zones = client.get("/api/risk/daily/zones", params={"date": "2024-02-03"}).json()
+    assert zones["fires"] == [] and zones["points"] == [] and zones["summary"]["fires"] == 0
+
+
+def cell_km2(lat: float) -> float:
+    """Area of a 0.25 degree cell from its south-west corner, on a sphere of radius 6371.0088 km."""
+    return 6371.0088 ** 2 * math.radians(0.25) * (math.sin(math.radians(lat + 0.25)) - math.sin(math.radians(lat)))
+
+
+def test_daily_area_adds_cells_in_alert_and_expected_area_by_region(daily):
+    area = daily.get("/api/risk/daily", params={"date": "2024-02-03"}).json()["area"]
+    valpo, chaco = cell_km2(-33.25), cell_km2(-27.0)
+    assert 600 < valpo < 700 and chaco > valpo                     # cells shrink towards the pole
+    assert (area["cells"], area["alert_cells"]) == (2, 1)
+    assert area["cells_km2"] == round(valpo + chaco)
+    assert area["alert_km2"] == round(valpo)
+    assert area["expected_km2"] == round(0.93 * valpo + 0.01 * chaco)
+    assert area["regions"][0] == {"country": "Chile", "admin1": "Región de Valparaíso", "cells": 1, "alert_cells": 1,
+                                  "alert_km2": round(valpo), "expected_km2": round(0.93 * valpo)}
+    assert [r["admin1"] for r in area["regions"]] == ["Región de Valparaíso", "Chaco"]   # Chaco: 8 km2 expected
+    salta = daily.get("/api/risk/daily", params={"date": "2023-07-16", **SALTA}).json()["area"]
+    assert salta["alert_km2"] == round(cell_km2(-25.0)) and salta["regions"][0]["admin1"] == "Salta"
+
+
+ZONES = """
+SELECT DATE '2024-02-03' AS burn_date, DATE '2024-02-02' AS seen_date, fire_id, lat, lon, country, admin1,
+       hotspots, 50.0 AS frp_sum_mw, size_class, active, p_continue, 0.6 AS r50_km, 1.9 AS r80_km, 2.7 AS r90_km,
+       a50 AS area50_km2, a80 AS area80_km2, a90 AS area90_km2, continued, nxt AS next_hotspots, inside AS next_in_r80
+FROM (VALUES
+    (0, -33.11, -71.61, 'Chile', 'Región de Valparaíso', 3, '2-4', true, 0.21, 2.0, 15.0, 30.0, true, 4, 3),
+    (1, -27.00, -60.00, 'Argentina', 'Chaco', 1, '1', false, 0.06, 1.1, 11.3, 22.9, false, 0, 0)
+) t(fire_id, lat, lon, country, admin1, hotspots, size_class, active, p_continue, a50, a80, a90, continued, nxt, inside)
+"""
+ZONE_POINTS = """
+SELECT DATE '2024-02-03' AS burn_date, fire_id, lat, lon FROM (VALUES
+    (0, -33.110, -71.610), (0, -33.112, -71.612), (0, -33.114, -71.610), (1, -27.0, -60.0)) t(fire_id, lat, lon)
+"""
+
+
+def test_zones_give_each_fire_its_chance_radii_area_and_points(daily, tmp_path):
+    duckdb.sql(f"COPY ({ZONES}) TO '{tmp_path}/risk/fire_zones.parquet'")
+    duckdb.sql(f"COPY ({ZONE_POINTS}) TO '{tmp_path}/risk/fire_zone_points.parquet'")
+    main._con = None
+    body = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03"}).json()
+    assert body["seen_date"] == "2024-02-02"
+    assert [f[0] for f in body["fires"]] == [0, 1]                              # largest first
+    assert body["fires"][0][3:8] == [3, 0.21, 0.6, 1.9, 2.7]
+    assert body["fires"][0][11:] == [True, 4, 3, "Región de Valparaíso"]
+    assert len(body["points"]) == 4 and body["truncated"] is False
+    assert body["summary"] == {"fires": 2, "likely": 0, "expected_continuing": 0.3, "area80_km2": 26}
+    chile = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03", "country": "Chile"}).json()
+    assert [f[0] for f in chile["fires"]] == [0] and {p[0] for p in chile["points"]} == {0}
+    assert daily.get("/api/risk/daily/zones", params={"date": "2024-02-04"}).json()["fires"] == []
+
+
+def test_zone_points_stop_at_the_budget_but_the_largest_fire_keeps_its_own(daily, tmp_path, monkeypatch):
+    duckdb.sql(f"COPY ({ZONES}) TO '{tmp_path}/risk/fire_zones.parquet'")
+    duckdb.sql(f"COPY ({ZONE_POINTS}) TO '{tmp_path}/risk/fire_zone_points.parquet'")
+    main._con = None
+    monkeypatch.setattr(main, "ZONE_POINTS", 2)                                # fewer than the 3 of fire 0
+    body = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03"}).json()
+    assert {p[0] for p in body["points"]} == {0} and body["truncated"] is True

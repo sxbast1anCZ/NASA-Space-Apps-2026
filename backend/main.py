@@ -38,6 +38,11 @@ RELIABLE_MEDIAN = 10           # below this reference median the ratio is not sh
 RINGS = [{"km": 5, "share": 0.38}, {"km": 10, "share": 0.50}, {"km": 25, "share": 0.69}]
 RING_POINTS = 3000             # hotspots sent for the rings, after thinning them to about 2 km
 NOAA20_FROM = date(2026, 11, 1)  # the satellite of the outlook: Suomi-NPP before, NOAA-20 from this day
+EARTH_KM = 6371.0088           # mean radius, for the area of a cell on the sphere
+ZONE_POINTS = 6000             # hotspots sent for the fire zones, largest fires first
+# Area of a cell named by its south-west corner, in km2 (0.25 degree: about 700 km2 at 25 S, 450 at 54 S).
+CELL_KM2 = (f"({EARTH_KM ** 2} * radians({CELL}) * "
+            f"(sin(radians(cell_lat + {CELL})) - sin(radians(cell_lat))))")
 # Optional files of the next-day outlook, with their columns so that the app starts without them.
 DAILY_FILES = {
     "daily": ("cells_daily.parquet", "NULL::DATE AS burn_date, 0.0 AS cell_lat, 0.0 AS cell_lon, "
@@ -47,6 +52,13 @@ DAILY_FILES = {
     "daily_wind": ("wind_live.parquet", "NULL::DATE AS burn_date, 0.0 AS cell_lat, 0.0 AS cell_lon, "
                    "0.0 AS wind_from_deg, 0.0 AS downwind_deg, 0.0 AS wind_max_kmh, 0.0 AS gust_max_kmh, "
                    "0.0 AS rh_min_pct, 0.0 AS tmax_c"),
+    # Zones of likely activity around the fires of the day before (scripts/fire_zones.py).
+    "zones": ("fire_zones.parquet", "NULL::DATE AS burn_date, NULL::DATE AS seen_date, 0 AS fire_id, 0.0 AS lat, "
+              "0.0 AS lon, '' AS country, '' AS admin1, 0 AS hotspots, 0.0 AS frp_sum_mw, '' AS size_class, "
+              "NULL::BOOLEAN AS active, 0.0 AS p_continue, 0.0 AS r50_km, 0.0 AS r80_km, 0.0 AS r90_km, "
+              "0.0 AS area50_km2, 0.0 AS area80_km2, 0.0 AS area90_km2, NULL::BOOLEAN AS continued, "
+              "0 AS next_hotspots, 0 AS next_in_r80"),
+    "zone_points": ("fire_zone_points.parquet", "NULL::DATE AS burn_date, 0 AS fire_id, 0.0 AS lat, 0.0 AS lon"),
 }
 
 app = FastAPI(title="Harmonized burn calendar")
@@ -76,6 +88,13 @@ def db() -> duckdb.DuckDBPyConnection:
                 else f"SELECT {empty} LIMIT 0"
             con.execute(f"CREATE VIEW {name} AS {source}")
         con.execute("CREATE TABLE daily_days AS SELECT DISTINCT burn_date FROM daily")
+        # Region of each cell for the area summary: the one of most of its rows, ties by name.
+        con.execute("""
+            CREATE TABLE cell_region AS SELECT cell_lat, cell_lon, country, admin1 FROM (
+                SELECT *, row_number() OVER (PARTITION BY cell_lat, cell_lon ORDER BY n DESC, country, admin1) AS k
+                FROM (SELECT cell_lat, cell_lon, country, admin1, count(*) AS n FROM cells
+                      WHERE admin1 IS NOT NULL GROUP BY cell_lat, cell_lon, country, admin1)) WHERE k = 1
+        """)
         _con = con
     return _con.cursor()  # one cursor per request: endpoints run in a thread pool
 
@@ -190,7 +209,29 @@ def risk_daily(
         SELECT w.cell_lat, w.cell_lon, round(w.downwind_deg::DOUBLE), round(w.wind_max_kmh::DOUBLE, 1)
         FROM daily_wind w {area} WHERE w.burn_date = ? AND w.downwind_deg IS NOT NULL ORDER BY 1, 2
     """, [*params, day]).fetchall()
-    return {"date": day, "cells": cells, "wind": wind}
+    return {"date": day, "cells": cells, "wind": wind, "area": daily_area(con, area, params, day)}
+
+
+def daily_area(con, area: str, params: list, day: date) -> dict:
+    """Area of the cells in alert and the expected area of cells with activity, in km2, with regions.
+
+    `expected_km2` adds probability times cell area: the area of the cells where the satellite would
+    see at least one hotspot, on average over days like this one. It is not burned area.
+    """
+    rows = con.execute(f"""
+        SELECT r.country, r.admin1, count(*), sum(d.alert)::INTEGER,
+               sum(d.km2), sum(d.km2 * d.alert), sum(d.km2 * d.probability)
+        FROM (SELECT d.*, {CELL_KM2} AS km2 FROM daily d {area} WHERE d.burn_date = ?) d
+        LEFT JOIN cell_region r USING (cell_lat, cell_lon)
+        GROUP BY ALL ORDER BY 6 DESC, 7 DESC, 1, 2
+    """, [*params, day]).fetchall()
+    total = [sum(r[i] or 0 for r in rows) for i in range(2, 7)]
+    return {
+        "cells": total[0], "alert_cells": total[1], "cells_km2": round(total[2]),
+        "alert_km2": round(total[3]), "expected_km2": round(total[4]),
+        "regions": [{"country": c, "admin1": a, "cells": n, "alert_cells": k, "alert_km2": round(ak),
+                     "expected_km2": round(ek)} for c, a, n, k, _, ak, ek in rows if k or ek >= 0.5],
+    }
 
 
 @app.get("/api/risk/daily/cell")
@@ -247,6 +288,48 @@ def risk_daily_hotspots(
     """, [*params, seen, satellite]).fetchall()
     return {"date": seen, "satellite": satellite, "points": points[:RING_POINTS],
             "truncated": len(points) > RING_POINTS, "rings": RINGS}
+
+
+@app.get("/api/risk/daily/zones")
+def risk_daily_zones(
+    day: Day,
+    west: Lon = None, south: Lat = None, east: Lon = None, north: Lat = None,
+    country: str | None = None, admin1: str | None = None,
+):
+    """Fires of the day before the predicted day, with the zones where their hotspots usually fall next.
+
+    `fires`: [fire_id, lat, lon, hotspots, p_continue, r50_km, r80_km, r90_km, area50_km2, area80_km2,
+    area90_km2, continued, next_hotspots, next_in_r80, admin1], largest first. `continued` is null for
+    the live day. `points`: [fire_id, lat, lon] of the hotspots, about 200 m apart, for as many fires
+    as fit in ZONE_POINTS; `truncated` says that some fires were left without points.
+    """
+    con = db()
+    where, params = area_filter(west, south, east, north, country, admin1, lat="lat", lon="lon", size=0)
+    fires = con.execute(f"""
+        SELECT fire_id, round(lat, 4), round(lon, 4), hotspots::INTEGER, round(p_continue::DOUBLE, 3),
+               round(r50_km::DOUBLE, 2), round(r80_km::DOUBLE, 2), round(r90_km::DOUBLE, 2),
+               round(area50_km2::DOUBLE, 1), round(area80_km2::DOUBLE, 1), round(area90_km2::DOUBLE, 1),
+               continued, next_hotspots::INTEGER, next_in_r80::INTEGER, admin1
+        FROM zones WHERE burn_date = ? AND {where} ORDER BY hotspots DESC, fire_id
+    """, [day, *params]).fetchall()
+    seen = con.execute("SELECT max(seen_date) FROM zones WHERE burn_date = ?", [day]).fetchone()[0]
+    sent, budget = [], ZONE_POINTS
+    for f in fires:
+        if f[3] > budget and sent:   # the largest fire always gets its points
+            break
+        sent.append(f[0])
+        budget -= f[3]
+    points = con.execute(
+        "SELECT fire_id, lat, lon FROM zone_points WHERE burn_date = ? AND list_contains(?, fire_id) ORDER BY 1, 2, 3",
+        [day, sent]).fetchall() if sent else []
+    summary = {
+        "fires": len(fires),
+        "likely": sum(1 for f in fires if f[4] is not None and f[4] >= 0.5),
+        "expected_continuing": round(sum(f[4] or 0 for f in fires), 1),
+        "area80_km2": round(sum(f[9] or 0 for f in fires)),
+    }
+    return {"date": day, "seen_date": seen, "fires": fires, "points": points,
+            "truncated": len(sent) < len(fires), "summary": summary}
 
 
 @app.get("/api/calendar")
