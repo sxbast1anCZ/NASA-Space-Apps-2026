@@ -33,6 +33,21 @@ CSV_ROW_LIMIT = 200_000
 # before 2012 fire activity was 1.35 times higher, so an all-years median makes recent months look low.
 REFERENCE_START = 2013
 RELIABLE_MEDIAN = 10           # below this reference median the ratio is not shown as an anomaly
+# Next-day outlook (docs/findings/09-daily-model.md). Share of the hotspots of a day that lie within
+# each distance of a hotspot of the day before (Suomi-NPP, 2013-2025): where fire fell, not a forecast.
+RINGS = [{"km": 5, "share": 0.38}, {"km": 10, "share": 0.50}, {"km": 25, "share": 0.69}]
+RING_POINTS = 3000             # hotspots sent for the rings, after thinning them to about 2 km
+NOAA20_FROM = date(2026, 11, 1)  # the satellite of the outlook: Suomi-NPP before, NOAA-20 from this day
+# Optional files of the next-day outlook, with their columns so that the app starts without them.
+DAILY_FILES = {
+    "daily": ("cells_daily.parquet", "NULL::DATE AS burn_date, 0.0 AS cell_lat, 0.0 AS cell_lon, "
+              "0.0 AS probability, 0.0 AS baseline_probability, 0 AS alert"),
+    "daily_reasons": ("cells_daily_reasons.parquet", "NULL::DATE AS burn_date, 0.0 AS cell_lat, 0.0 AS cell_lon, "
+                      "'' AS reason_1, '' AS reason_2, '' AS reason_3, 0.0 AS share_1, 0.0 AS share_2, 0.0 AS share_3"),
+    "daily_wind": ("wind_live.parquet", "NULL::DATE AS burn_date, 0.0 AS cell_lat, 0.0 AS cell_lon, "
+                   "0.0 AS wind_from_deg, 0.0 AS downwind_deg, 0.0 AS wind_max_kmh, 0.0 AS gust_max_kmh, "
+                   "0.0 AS rh_min_pct, 0.0 AS tmax_c"),
+}
 
 app = FastAPI(title="Harmonized burn calendar")
 _con: duckdb.DuckDBPyConnection | None = None
@@ -54,6 +69,13 @@ def db() -> duckdb.DuckDBPyConnection:
             CREATE TABLE risk AS SELECT * FROM {source}
             WHERE week_start > (SELECT max(burn_date) - 8 FROM cells)
         """)
+        # Next-day outlook: views, so that each request reads only its day from the files.
+        for name, (file, empty) in DAILY_FILES.items():
+            path = DATA / "risk" / file
+            source = f"SELECT * REPLACE (burn_date::DATE AS burn_date) FROM read_parquet('{path}')" if path.exists() \
+                else f"SELECT {empty} LIMIT 0"
+            con.execute(f"CREATE VIEW {name} AS {source}")
+        con.execute("CREATE TABLE daily_days AS SELECT DISTINCT burn_date FROM daily")
         _con = con
     return _con.cursor()  # one cursor per request: endpoints run in a thread pool
 
@@ -117,6 +139,9 @@ def meta():
         "regions": [{"country": c, "admin1": a} for c, a in regions],
         # Weeks the risk layer covers, first the week in progress. Empty when there is no risk file.
         "risk_weeks": [w for (w,) in con.execute("SELECT DISTINCT week_start FROM risk ORDER BY 1").fetchall()],
+        # Days the next-day outlook covers, newest first: the first one is the live day. Not every day
+        # is there (satellite outages, and no days between the test years and the live day).
+        "risk_days": [d for (d,) in con.execute("SELECT burn_date FROM daily_days ORDER BY 1 DESC").fetchall()],
     }
 
 
@@ -136,6 +161,92 @@ def risk(
         WHERE r.week_start = ? ORDER BY 1, 2
     """, [*params, week]).fetchall()
     return {"week_start": week, "cells": rows}
+
+
+Day = Annotated[date, Query(alias="date")]
+
+
+@app.get("/api/risk/daily")
+def risk_daily(
+    day: Day,
+    west: Lon = None, south: Lat = None, east: Lon = None, north: Lat = None,
+    country: str | None = None, admin1: str | None = None,
+):
+    """Next-day outlook for one predicted day.
+
+    cells: [cell_lat, cell_lon, probability, historical rate, alert (0 or 1)].
+    wind: [cell_lat, cell_lon, direction the wind blows to (degrees), maximum speed (km/h)], for the
+    cells in alert, when the wind file has that day.
+    """
+    con = db()
+    where, params = area_filter(west, south, east, north, country, admin1)
+    area = f"SEMI JOIN (SELECT DISTINCT cell_lat, cell_lon FROM cells WHERE {where}) c USING (cell_lat, cell_lon)"
+    cells = con.execute(f"""
+        SELECT d.cell_lat, d.cell_lon, round(d.probability::DOUBLE, 3), round(d.baseline_probability::DOUBLE, 3),
+               d.alert::INTEGER
+        FROM daily d {area} WHERE d.burn_date = ? ORDER BY 1, 2
+    """, [*params, day]).fetchall()
+    wind = con.execute(f"""
+        SELECT w.cell_lat, w.cell_lon, round(w.downwind_deg::DOUBLE), round(w.wind_max_kmh::DOUBLE, 1)
+        FROM daily_wind w {area} WHERE w.burn_date = ? AND w.downwind_deg IS NOT NULL ORDER BY 1, 2
+    """, [*params, day]).fetchall()
+    return {"date": day, "cells": cells, "wind": wind}
+
+
+@app.get("/api/risk/daily/cell")
+def risk_daily_cell(day: Day, cell_lat: float, cell_lon: float):
+    """One cell of the next-day outlook: its numbers, the reasons of its alert and its wind."""
+    con = db()
+    key = [day, cell_lat, cell_lon]
+    cell = con.execute("""
+        SELECT probability::DOUBLE, baseline_probability::DOUBLE, alert::INTEGER FROM daily
+        WHERE burn_date = ? AND cell_lat = ? AND cell_lon = ?
+    """, key).fetchone()
+    if cell is None:
+        raise HTTPException(404, "No outlook for that cell and day")
+    why = con.execute("""
+        SELECT reason_1, share_1::DOUBLE, reason_2, share_2::DOUBLE, reason_3, share_3::DOUBLE FROM daily_reasons
+        WHERE burn_date = ? AND cell_lat = ? AND cell_lon = ?
+    """, key).fetchone() or ()
+    wind = con.execute("""
+        SELECT wind_from_deg::DOUBLE, downwind_deg::DOUBLE, wind_max_kmh::DOUBLE, gust_max_kmh::DOUBLE,
+               rh_min_pct::DOUBLE, tmax_c::DOUBLE FROM daily_wind
+        WHERE burn_date = ? AND cell_lat = ? AND cell_lon = ?
+    """, key).fetchone()
+    names = ["wind_from_deg", "downwind_deg", "wind_max_kmh", "gust_max_kmh", "rh_min_pct", "tmax_c"]
+    return {
+        "date": day, "cell_lat": cell_lat, "cell_lon": cell_lon,
+        "probability": round(cell[0], 3), "baseline_probability": round(cell[1], 3), "alert": bool(cell[2]),
+        "reasons": [{"text": text, "share": round(share, 2)} for text, share in zip(why[::2], why[1::2]) if text],
+        "wind": dict(zip(names, wind)) if wind else None,
+    }
+
+
+@app.get("/api/risk/daily/hotspots")
+def risk_daily_hotspots(
+    day: Day,
+    west: Lon = None, south: Lat = None, east: Lon = None, north: Lat = None,
+    country: str | None = None, admin1: str | None = None,
+):
+    """Hotspots of the day before the predicted day, for the rings of the map: [latitude, longitude].
+
+    Only the satellite of the outlook, and thinned to one point per 0.02 degrees (about 2 km): the
+    smallest ring is 5 km. `truncated` says that the area has more points than are sent.
+    """
+    con = db()
+    source = DATA / "harmonized" / "hotspots_kept.parquet"
+    if not source.exists():
+        raise HTTPException(503, f"{source} not found. Run scripts/harmonize.py.")
+    seen = day - timedelta(days=1)
+    satellite = "NOAA-20" if seen >= NOAA20_FROM else "Suomi-NPP"
+    where, params = area_filter(west, south, east, north, country, admin1, lat="latitude", lon="longitude", size=0)
+    points = con.execute(f"""
+        SELECT DISTINCT round(round(latitude / 0.02) * 0.02, 2), round(round(longitude / 0.02) * 0.02, 2)
+        FROM read_parquet('{source}') WHERE {where} AND burn_date = ? AND satellite = ?
+        ORDER BY 1, 2 LIMIT {RING_POINTS + 1}
+    """, [*params, seen, satellite]).fetchall()
+    return {"date": seen, "satellite": satellite, "points": points[:RING_POINTS],
+            "truncated": len(points) > RING_POINTS, "rings": RINGS}
 
 
 @app.get("/api/calendar")

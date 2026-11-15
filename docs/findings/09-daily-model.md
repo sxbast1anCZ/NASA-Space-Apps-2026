@@ -155,6 +155,18 @@ runs the app).
 
 There are no rows between 2026-01-01 and 2026-11-12: the day picker goes from 2025 to the live day.
 
+In the web app (`backend/main.py`, `frontend/src/`), section "Next-day outlook":
+
+| Piece | What it does |
+|---|---|
+| `GET /api/meta` | `risk_days`: the days with an outlook, newest first |
+| `GET /api/risk/daily?date=` | The cells of the day in the selected area, with the alert flag, and the wind of the cells in alert |
+| `GET /api/risk/daily/cell?date=&cell_lat=&cell_lon=` | One cell: probability, historical rate, reasons, wind |
+| `GET /api/risk/daily/hotspots?date=` | Hotspots of the day before, thinned to about 2 km, and the shares of the rings |
+| Map | Cells coloured by probability; from zoom 7, an outline on the cells in alert and an arrow for where the wind blows to. A click on a cell opens its reasons. A checkbox shades 5, 10 and 25 km around the hotspots of the day before, darker near the fire |
+
+The app starts without any of the three files: the section does not appear.
+
 ## 7. Possible spread: what the data support
 
 **Rings (observed).** Of the hotspots of day D+1, 38% lie within 5 km of a hotspot of day D, 50%

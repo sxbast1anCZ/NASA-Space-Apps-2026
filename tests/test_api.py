@@ -203,3 +203,73 @@ def test_app_works_without_a_risk_file(client, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "_con", None)
     assert client.get("/api/meta").json()["risk_weeks"] == []
     assert client.get("/api/risk", params={"week": "2024-03-11"}).json()["cells"] == []
+
+
+# ---------------------------------------------------------------- next-day outlook
+
+DAILY = """
+SELECT * FROM (VALUES
+    (DATE '2024-02-03', -33.25::DOUBLE, -71.75::DOUBLE, 0.93::FLOAT, 0.09::FLOAT, 1::TINYINT),
+    (DATE '2024-02-03', -27.00::DOUBLE, -60.00::DOUBLE, 0.01::FLOAT, 0.02::FLOAT, 0::TINYINT),
+    (DATE '2023-07-16', -25.00::DOUBLE, -65.00::DOUBLE, 0.30::FLOAT, 0.20::FLOAT, 1::TINYINT)
+) t(burn_date, cell_lat, cell_lon, probability, baseline_probability, alert)
+"""
+REASONS = """
+SELECT DATE '2024-02-03' AS burn_date, -33.25::DOUBLE AS cell_lat, -71.75::DOUBLE AS cell_lon,
+       'Today''s fire here had 128 hotspots' AS reason_1, 'Fire was detected in this cell today' AS reason_2,
+       '' AS reason_3, 0.6::FLOAT AS share_1, 0.4::FLOAT AS share_2, 0.0::FLOAT AS share_3
+"""
+WIND = """
+SELECT DATE '2024-02-03' AS burn_date, -33.25::DOUBLE AS cell_lat, -71.75::DOUBLE AS cell_lon,
+       186::BIGINT AS wind_from_deg, 6::BIGINT AS downwind_deg, 21.0 AS wind_max_kmh, 58.3 AS gust_max_kmh,
+       18::BIGINT AS rh_min_pct, 34.0 AS tmax_c
+"""
+VALPARAISO = {"date": "2024-02-03", "cell_lat": -33.25, "cell_lon": -71.75}
+
+
+@pytest.fixture
+def daily(client, tmp_path):
+    for name, query in (("cells_daily", DAILY), ("cells_daily_reasons", REASONS), ("wind_live", WIND)):
+        duckdb.sql(f"COPY ({query}) TO '{tmp_path}/risk/{name}.parquet'")
+    return client
+
+
+def test_daily_days_are_listed_newest_first(daily):
+    assert daily.get("/api/meta").json()["risk_days"] == ["2024-02-03", "2023-07-16"]
+
+
+def test_daily_returns_the_cells_of_the_day_and_area_with_alert_and_wind(daily):
+    body = daily.get("/api/risk/daily", params={"date": "2024-02-03"}).json()
+    assert body["cells"] == [[-33.25, -71.75, 0.93, 0.09, 1], [-27.0, -60.0, 0.01, 0.02, 0]]
+    assert body["wind"] == [[-33.25, -71.75, 6.0, 21.0]]                       # blows to the north
+    argentina = daily.get("/api/risk/daily", params={"date": "2024-02-03", "country": "Argentina"}).json()
+    assert argentina["cells"] == [[-27.0, -60.0, 0.01, 0.02, 0]] and argentina["wind"] == []
+    assert daily.get("/api/risk/daily", params={"date": "2024-02-04"}).json()["cells"] == []
+
+
+def test_daily_cell_gives_reasons_and_wind(daily):
+    body = daily.get("/api/risk/daily/cell", params=VALPARAISO).json()
+    assert body["probability"] == 0.93 and body["baseline_probability"] == 0.09 and body["alert"] is True
+    assert body["reasons"] == [{"text": "Today's fire here had 128 hotspots", "share": 0.6},
+                               {"text": "Fire was detected in this cell today", "share": 0.4}]   # no empty third
+    assert body["wind"]["wind_from_deg"] == 186 and body["wind"]["downwind_deg"] == 6
+    quiet = daily.get("/api/risk/daily/cell", params={**VALPARAISO, "cell_lat": -27.0, "cell_lon": -60.0}).json()
+    assert quiet["alert"] is False and quiet["reasons"] == [] and quiet["wind"] is None
+    assert daily.get("/api/risk/daily/cell", params={**VALPARAISO, "cell_lat": 0}).status_code == 404
+
+
+def test_daily_hotspots_are_the_day_before_from_the_satellite_of_the_outlook(daily, tmp_path):
+    duckdb.sql(f"""COPY (SELECT * REPLACE (CASE WHEN latitude = -33.12 THEN 'Suomi-NPP' ELSE satellite END AS satellite)
+                         FROM ({HOTSPOTS})) TO '{tmp_path}/harmonized/hotspots_kept.parquet'""")
+    body = daily.get("/api/risk/daily/hotspots", params={"date": "2024-02-03"}).json()
+    assert body["date"] == "2024-02-02" and body["satellite"] == "Suomi-NPP"
+    assert body["points"] == [[-33.12, -71.62]] and body["truncated"] is False   # thinned to 0.02 degrees
+    assert [r["km"] for r in body["rings"]] == [5, 10, 25]
+    assert daily.get("/api/risk/daily/hotspots", params={"date": "2024-02-03", "country": "Argentina"}).json()["points"] == []
+    assert daily.get("/api/risk/daily/hotspots", params={"date": "2026-11-13"}).json()["satellite"] == "NOAA-20"
+
+
+def test_app_works_without_the_daily_files(client):
+    assert client.get("/api/meta").json()["risk_days"] == []
+    assert client.get("/api/risk/daily", params={"date": "2024-02-03"}).json() == {"date": "2024-02-03", "cells": [], "wind": []}
+    assert client.get("/api/risk/daily/cell", params=VALPARAISO).status_code == 404

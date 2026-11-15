@@ -1,7 +1,7 @@
 import type { EChartsOption } from 'echarts'
 import { useEffect, useMemo, useState } from 'react'
-import type { Box, Calendar, Meta, Month, Reference, RiskCell, Search } from './api.ts'
-import { errorText, getCalendar, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
+import type { Box, Calendar, CellDetail, Daily, Meta, Month, Reference, Rings, RiskCell, Search } from './api.ts'
+import { errorText, getCalendar, getDaily, getDailyCell, getDailyHotspots, getMeta, getRisk, RISK_BINS, saveFile, searchParams } from './api.ts'
 import { Chart } from './Chart.tsx'
 import { MapPicker } from './MapPicker.tsx'
 
@@ -194,6 +194,11 @@ export default function App() {
   const [download, setDownload] = useState('')
   const [riskWeek, setRiskWeek] = useState('')
   const [risk, setRisk] = useState<RiskCell[] | null>(null)
+  const [day, setDay] = useState('') // predicted day of the next-day outlook; '' is off
+  const [daily, setDaily] = useState<Daily | null>(null)
+  const [showRings, setShowRings] = useState(false)
+  const [rings, setRings] = useState<Rings | null>(null)
+  const [detail, setDetail] = useState<CellDetail | null>(null)
 
   useEffect(() => {
     getMeta()
@@ -229,6 +234,28 @@ export default function App() {
       stale = true
     }
   }, [riskWeek, search])
+
+  useEffect(() => {
+    if (!search || !day) return
+    let stale = false
+    getDaily(day, search)
+      .then((d) => !stale && setDaily(d))
+      .catch((e: Error) => !stale && setError(e.message))
+    return () => {
+      stale = true
+    }
+  }, [day, search])
+
+  useEffect(() => {
+    if (!search || !day || !showRings) return
+    let stale = false
+    getDailyHotspots(day, search)
+      .then((r) => !stale && setRings(r))
+      .catch((e: Error) => !stale && setError(e.message))
+    return () => {
+      stale = true
+    }
+  }, [day, search, showRings])
 
   const calendar = useMemo(() => data && calendarOption(data, view), [data, view])
   const years = useMemo(() => data && yearsOption(data), [data])
@@ -271,6 +298,12 @@ export default function App() {
   const countries = [...new Set(meta.regions.map((r) => r.country))]
   const used = data?.bounds ? { west: data.bounds[0], south: data.bounds[1], east: data.bounds[2], north: data.bounds[3] } : null
   const areaName = search.box ? 'the drawn area' : search.admin1 || search.country || 'Chile and Argentina'
+  const days = meta.risk_days
+  const dayKnown = days.includes(day)
+  const shown = dayKnown && daily?.date === day ? daily : null // never the cells of another day
+  const alerts = shown?.cells.filter((c) => c[4] === 1).length ?? 0
+  const showCell = (lat: number, lon: number) =>
+    getDailyCell(day, lat, lon).then(setDetail).catch((e: Error) => setError(e.message))
 
   return (
     <div className="layout">
@@ -334,12 +367,50 @@ export default function App() {
           </div>
         </section>
 
+        {days.length > 0 && (
+          <section>
+            <h2>Next-day outlook</h2>
+            <label>
+              Day predicted
+              <input type="date" value={day} min={days[days.length - 1]} max={days[0]}
+                onChange={(e) => { setDay(e.target.value); setRiskWeek('') }} />
+            </label>
+            <div className="row">
+              <button type="button" className={day === days[0] ? 'active' : ''}
+                onClick={() => { setDay(days[0]); setRiskWeek('') }}>Latest day</button>
+              <button type="button" disabled={!day} onClick={() => setDay('')}>Off</button>
+            </div>
+            {day && !dayKnown && (
+              <p role="alert" className="error">
+                No outlook for {day}. It covers 2023 to 2025, without the days of a satellite outage, and {days[0]}.
+              </p>
+            )}
+            {day && dayKnown && (
+              <>
+                <ul className="legend" aria-label="Colours of the outlook">
+                  {RISK_BINS.map((b) => <li key={b.label}><span style={{ background: b.color }} />{b.label}</li>)}
+                  <li><span className="outlined" />In alert</li>
+                </ul>
+                <label className="check">
+                  <input type="checkbox" checked={showRings} onChange={(e) => setShowRings(e.target.checked)} />
+                  Shade the surroundings of the hotspots of the day before
+                </label>
+              </>
+            )}
+            <p className="hint">
+              Chance of at least one hotspot in each cell on that day, from the fire seen up to the day before and
+              the history of the cell. Cells in alert are the ones the model flags to catch 8 of 10 fires; most
+              alerts have no fire the next day. Click a cell to see why.
+            </p>
+          </section>
+        )}
+
         {meta.risk_weeks.length > 0 && (
           <section>
             <h2>Fire activity outlook</h2>
             <label>
               Week starting
-              <select value={riskWeek} onChange={(e) => setRiskWeek(e.target.value)}>
+              <select value={riskWeek} onChange={(e) => { setRiskWeek(e.target.value); if (e.target.value) setDay('') }}>
                 <option value="">Off</option>
                 {meta.risk_weeks.map((w, i) => <option key={w} value={w}>{i === 0 ? `${w} (this week)` : w}</option>)}
               </select>
@@ -369,7 +440,26 @@ export default function App() {
 
       <main>
         <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox}
-          risk={riskWeek ? risk : null} cellDegrees={meta.cell_degrees} />
+          risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null}
+          detail={detail?.date === day ? detail : null} onCell={showCell} cellDegrees={meta.cell_degrees} />
+        {shown && daily && (
+          <p className="hint" role="status">
+            Outlook for {day}{day === days[0] ? ' (the latest day)' : ''}, in {areaName}:{' '}
+            {daily.cells.length === 0 ? 'no cells with fire history here.'
+              : `${full.format(alerts)} of ${full.format(daily.cells.length)} cells are in alert; `
+                + `the highest chance is ${Math.round(Math.max(...daily.cells.map((c) => c[2])) * 100)}%.`}
+            {daily.wind.length > 0 && ' Zoom in to see the outline of the cells in alert and arrows for where the wind blows to that day (weather data by Open-Meteo.com); the arrows are not a forecast of spread.'}
+            {' '}No alert does not mean no fire: clouds, small or short fires and the hours of the satellite passes can hide one.
+          </p>
+        )}
+        {day && showRings && rings && (
+          <p className="hint" role="status">
+            Shaded: around the {full.format(rings.points.length)} places with hotspots on {rings.date} ({rings.satellite}).
+            In past years, {rings.rings.map((r) => `${Math.round(r.share * 100)}% of the hotspots of the next day fell within ${r.km} km`).join(', ')}
+            {' '}of a hotspot of the day before. It is where fire fell before, not a forecast of a perimeter.
+            {rings.truncated && ' Too many hotspots for the whole area: choose a smaller one to see them all.'}
+          </p>
+        )}
         {riskWeek && risk && (
           <p className="hint" role="status">
             Outlook for the week starting {riskWeek}, in {areaName}:{' '}

@@ -18,10 +18,40 @@ export type Meta = {
   cell_degrees: number
   regions: { country: string; admin1: string }[]
   risk_weeks: string[] // first the week in progress; empty when there is no risk layer
+  risk_days: string[] // days of the next-day outlook, newest (the live day) first; not every day is there
 }
 
 /** [cell_lat, cell_lon, probability, baseline_probability]; the cell is identified by its south-west corner. */
 export type RiskCell = [number, number, number, number]
+
+/** [cell_lat, cell_lon, probability, historical rate, alert (0 or 1)] */
+export type DailyCell = [number, number, number, number, number]
+/** [cell_lat, cell_lon, direction the wind blows to in degrees, maximum speed in km/h] */
+export type WindCell = [number, number, number, number]
+export type Daily = { date: string; cells: DailyCell[]; wind: WindCell[] }
+
+export type CellDetail = {
+  date: string
+  cell_lat: number
+  cell_lon: number
+  probability: number
+  baseline_probability: number
+  alert: boolean
+  reasons: { text: string; share: number }[] // why the model flagged it, strongest first
+  wind: {
+    wind_from_deg: number; downwind_deg: number; wind_max_kmh: number; gust_max_kmh: number
+    rh_min_pct: number; tmax_c: number
+  } | null
+}
+
+/** Hotspots of the day before the predicted day, and how much next-day fire fell within each distance. */
+export type Rings = {
+  date: string
+  satellite: string
+  points: [number, number][]
+  truncated: boolean
+  rings: { km: number; share: number }[]
+}
 
 export type Month = {
   year: number
@@ -93,6 +123,18 @@ export function getRisk(week: string, s: Search) {
   return get<{ week_start: string; cells: RiskCell[] }>(`/api/risk?${p}`)
 }
 
+function areaParams(s: Search, date: string) {
+  const p = searchParams(s)
+  p.delete('from')
+  p.delete('to')
+  p.set('date', date)
+  return p
+}
+export const getDaily = (date: string, s: Search) => get<Daily>(`/api/risk/daily?${areaParams(s, date)}`)
+export const getDailyHotspots = (date: string, s: Search) => get<Rings>(`/api/risk/daily/hotspots?${areaParams(s, date)}`)
+export const getDailyCell = (date: string, lat: number, lon: number) =>
+  get<CellDetail>(`/api/risk/daily/cell?date=${date}&cell_lat=${lat}&cell_lon=${lon}`)
+
 export function saveFile(name: string, content: Blob) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(content)
@@ -101,7 +143,7 @@ export function saveFile(name: string, content: Blob) {
   URL.revokeObjectURL(a.href)
 }
 
-// Probability of fire activity in a cell during the week. Yellow to dark red, light to dark.
+// Probability of fire activity in a cell during the week or the day. Yellow to dark red, light to dark.
 export const RISK_BINS = [
   { from: 0.05, label: '5 to 10%', color: '#ffffb2' },
   { from: 0.1, label: '10 to 25%', color: '#fecc5c' },
