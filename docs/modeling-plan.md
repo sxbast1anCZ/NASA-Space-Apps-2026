@@ -12,6 +12,10 @@ sections below, which stay as the full version of the brief, to be done only if 
 
 ## 0. Scope decided for the deadline
 
+**State on 2026-11-15:** the data, evaluation and models lanes are done and the model is frozen.
+Results, limits and the files for the interface: `docs/findings/09-daily-model.md`. The interface
+lane is the only one left.
+
 Decided on the night of 2026-11-14, with about 13 hours left and the interface still to build.
 
 | Topic | Full brief (sections 3 to 8) | Scope for the deadline |
@@ -106,15 +110,22 @@ frozen for delivery, the app ships with the baseline file and says so.
 ### Card 3. Models (Sebastián or Vicente, on Runpod)
 
 - **Files:** `scripts/daily_train.py`, `tests/test_daily_train.py`. `lightgbm` is already in `requirements.txt`.
+- **State:** the script and its tests are on `main`, written against the contract of section 4.1 and
+  tested on a made-up panel. What is left is to run it on the real panel: `python scripts/daily_train.py`.
 - **Steps:**
   1. For Chile and for Argentina: LightGBM with the `PARAMS` of `scripts/risk_model.py`, fitted on
      `train`, early stopping on `tune` by average precision. Features: every `lag_`, `nbr_`, `hist_`
      and `geo_` column and `cal_dow`.
   2. The comparison run: the same with `cal_month`, `cal_doy_sin`, `cal_doy_cos` added.
   3. Threshold of each run on `tune` at recall 0.80 (`daily_eval.pick_threshold`). Keep the run
-     with fewer alerts per day. Check it against `p_near` and `p_hist`.
-  4. Refit the kept run on `train` plus `tune` with the number of rounds of step 1. Score `test`
-     once. Predict the day after the last complete day.
+     with fewer alerts per day. Check it against `p_hist` (fewer alerts at that recall) and against
+     `p_near` (more recall with at most the alerts of the rule, never more:
+     `daily_eval.threshold_within_budget`).
+  4. Score `test` once with the model fitted on `train`: it is the model the threshold was chosen
+     for. For the `live` day, refit the kept run on every year with a target, with the number of
+     rounds of step 1, and keep the threshold. The app file keeps every date the data lane wrote:
+     the test years with their `gap` days, and the live day. The script stops if the panel has no
+     `live` rows.
   5. Write `daily/predictions.parquet` (`burn_date`, `cell_lat`, `cell_lon`, `model`, `probability`),
      `risk/cells_daily.parquet` and `risk/daily_metrics.json`.
 - **Runpod:** a CPU pod with 16 or more cores and 32 GB. Copy the repository and `daily/panel.parquet`.
@@ -260,7 +271,7 @@ Lane A writes it, lane B only reads it.
 | `country`, `admin1` | Country and region of most hotspots of the cell |
 | `segment` | `CL-PV`, `CL-OI`, `AR-PV`, `AR-OI`, from the country and the month of `burn_date` |
 | `season_label` | For example `PV 2023/24`, `OI 2024` |
-| `split` | `train`, `tune`, `test` (section 5); `live` for the day after the last complete day |
+| `split` | `train`, `tune`, `test` (section 5); `gap` for the first 7 predicted days of 2021 and 2023, which no split reads but the app shows; `live` for the day after the last complete day, with `fire` empty |
 | `fire` | Target, 0 or 1 |
 | `new_cell` | 1 if neither the cell nor its 8 neighbours had fire on D |
 | `p_hist`, `p_persist`, `p_near` | The three baselines (section 4.3) |

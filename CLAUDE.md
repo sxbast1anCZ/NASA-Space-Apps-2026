@@ -14,7 +14,10 @@ the rules and the open tasks. This section is only a summary.
 - **EDA, done:** 9 of 9 blocks. Results in `docs/findings/`, decisions in `docs/eda-findings.md`,
   loose ends in `docs/eda-closing-plan.md`.
 - **Added value, in progress:** a weekly outlook of where fire activity is most likely is in the app
-  (`scripts/risk_model.py`). A view of the current situation and a next-day outlook are not built.
+  (`scripts/risk_model.py`). A next-day outlook is trained, with a reason for each alert and wind for
+  the live day, and it is in the app as "Next-day outlook" (`docs/findings/09-daily-model.md`); the
+  model is frozen (technical handoff: `docs/daily-model-handoff.md`). A view of the current situation
+  is not built.
 - **Geography:** Chile and Argentina only. **Deadline:** Sunday 2026-11-15, 12:00 (Chile time).
 
 How to build the data and run everything: `docs/eda-runbook.md`. `NASA_Data_Sources/`,

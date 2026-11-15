@@ -75,6 +75,15 @@ fieldset button, fieldset .error { grid-column: 1 / -1; }
 .legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 0.8rem; }
 .legend span { display: inline-block; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border: 1px solid var(--line); }
 
+.legend span.outlined { background: #fff; border: 2px solid #3b0a12; }
+label.check { flex-direction: row; align-items: flex-start; gap: 8px; text-transform: none; }
+label.check input { margin-top: 3px; }
+.cell-card { font-size: 0.85rem; line-height: 1.4; }
+.cell-card p { margin: 0.35rem 0; }
+.cell-card ol { margin: 0.2rem 0 0.4rem; padding-left: 1.2rem; }
+.cell-card .label { font-weight: 600; }
+.cell-card .note { color: var(--muted); font-size: 0.78rem; }
+
 .map { height: 340px; border: 1px solid var(--line); border-radius: 8px; z-index: 0; }
 .figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 .figures p { font-size: 0.85rem; color: var(--muted); }

@@ -44,10 +44,25 @@ def test_threshold_needs_fire_rows_and_a_valid_recall():
         de.pick_threshold([1, 0], [0.1, 0.9], 0.0)
 
 
-def test_threshold_for_share_flags_that_share_of_rows():
+def test_budget_threshold_flags_exactly_the_budget_without_ties():
     p = np.arange(100) / 100
-    t = de.threshold_for_share(p, 0.10)
-    assert (p >= t).sum() == 10
+    assert (p >= de.threshold_within_budget(p, 10)).sum() == 10
+    assert (p >= de.threshold_within_budget(p, 100)).sum() == 100
+    assert (p >= de.threshold_within_budget(p, 500)).sum() == 100
+
+
+def test_budget_threshold_never_goes_over_the_budget_with_ties():
+    p = np.array([0.9, 0.5, 0.5, 0.5, 0.5, 0.1])
+    assert (p >= de.threshold_within_budget(p, 1)).sum() == 1
+    assert (p >= de.threshold_within_budget(p, 3)).sum() == 1      # the four tied rows do not fit in 3
+    assert (p >= de.threshold_within_budget(p, 5)).sum() == 5
+    everything_tied = np.full(6, 0.3)
+    assert (everything_tied >= de.threshold_within_budget(everything_tied, 1)).sum() == 0
+
+
+def test_a_budget_of_zero_alerts_flags_nothing():
+    t = de.threshold_within_budget([0.9, 0.1], 0)
+    assert math.isinf(t) and de.scores([1, 0], [0.9, 0.1], t)["tp"] == 0
 
 
 # ---------------------------------------------------------------- scores
@@ -159,3 +174,25 @@ def test_command_runs_with_baselines_only(tmp_path):
     de.main(["--panel", str(tmp_path / "panel.parquet"), "--predictions", str(tmp_path / "none.parquet"),
              "--out", str(tmp_path)])
     assert (tmp_path / "daily_metrics.json").exists()
+
+
+def test_a_model_never_gets_more_alerts_than_p_near_on_tune():
+    df = panel()
+    df["p_model"] = 0.5                                   # every score tied: nothing fits a smaller budget
+    df.loc[df["cell_lat"] == -30.0, "p_model"] = 0.9      # one cell in four stands out; p_near flags two
+    res = de.evaluate(df, ["p_near", "p_model"], 0.80)
+    tune = res[(res["split"] == "tune") & (res["group"] == "all")]
+    for country in ("Chile", "Argentina"):
+        t = tune[tune["country"] == country].set_index(["score", "operating_point"])
+        rule, model = t.loc[("p_near", "rule")], t.loc[("p_model", "alerts of p_near")]
+        assert model["tp"] + model["fp"] <= rule["tp"] + rule["fp"]
+
+
+def test_a_rule_without_alerts_leaves_the_model_without_alerts(tmp_path):
+    df = panel()
+    df["p_near"] = 0.0
+    res = de.evaluate(df, ["p_near", "p_model"], 0.80)
+    at_budget = res[(res["score"] == "p_model") & (res["operating_point"] == "alerts of p_near")]
+    assert (at_budget["tp"] + at_budget["fp"] == 0).all()
+    assert "none flagged" in de.to_markdown(res, 0.80)
+    json.loads(res.to_json(orient="records"))             # infinity is written as null: strict JSON

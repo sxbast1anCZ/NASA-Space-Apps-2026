@@ -12,6 +12,7 @@ Inputs (NASA_Data_Sources/processed/):
 
 Outputs (NASA_Data_Sources/processed/risk/):
     daily_metrics.json          one record per country, score, operating point, split and group
+                                (a threshold of null with no alerts means that nothing fitted the budget)
     daily_metrics.md            the same, as tables to read
 
 Thresholds are chosen on the `tune` rows of each country and applied unchanged to `test`.
@@ -25,6 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 from sklearn.metrics import average_precision_score
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -59,12 +61,23 @@ def pick_threshold(y, p, min_recall: float) -> float:
     return float(positives[needed - 1])
 
 
-def threshold_for_share(p, share: float) -> float:
-    """The threshold that flags the top `share` of the rows (more, if scores tie at the threshold)."""
+def threshold_within_budget(p, max_alerts: int) -> float:
+    """The lowest threshold that flags at most `max_alerts` rows.
+
+    Scores tied at the cut are left out together: the budget is never exceeded and the labels play no
+    part in who is flagged. Returns infinity (nothing flagged) when no threshold fits the budget.
+    """
     _, p = _arrays([], p)
-    if not len(p) or not 0 < share <= 1:
-        raise ValueError("needs rows and a share above 0 and at most 1")
-    return float(np.sort(p)[::-1][max(math.ceil(share * len(p) - 1e-9), 1) - 1])
+    if max_alerts <= 0 or not len(p):
+        return float("inf")
+    ranked = np.sort(p)[::-1]
+    if max_alerts >= len(p):
+        return float(ranked[-1])
+    cut = ranked[max_alerts - 1]
+    if ranked[max_alerts] < cut:              # no tie across the cut: exactly max_alerts rows
+        return float(cut)
+    above = ranked[ranked > cut]
+    return float(above[-1]) if len(above) else float("inf")
 
 
 # ---------------------------------------------------------------- scores
@@ -77,7 +90,7 @@ def scores(y, p, threshold: float, n_days: int | None = None) -> dict:
     fn, tn = int((~flag & y).sum()), int((~flag & ~y).sum())
 
     def recall_top(share: float) -> float:
-        return _ratio(float((y & (p >= threshold_for_share(p, share))).sum()), tp + fn) if len(p) else NAN
+        return _ratio(float((y & (p >= threshold_within_budget(p, int(share * len(p))))).sum()), tp + fn)
 
     return {
         "rows": len(y),
@@ -114,8 +127,8 @@ def evaluate(df: pd.DataFrame, score_cols, min_recall: float) -> pd.DataFrame:
     """Every score column, per country: threshold from `tune`, scores on `tune` and `test`.
 
     Operating points: `rule` (a yes/no baseline as it is), `recall` (the threshold that reaches
-    `min_recall` on tune) and `alerts of p_near` (the threshold that flags as many tune rows as the
-    p_near rule, so that a model and the rule are compared at the same cost).
+    `min_recall` on tune) and `alerts of p_near` (the threshold that flags at most as many tune rows as
+    the p_near rule, never more, so that a model and the rule are compared at the same cost).
     """
     df = df.assign(year=df["burn_date"].dt.year, month=df["burn_date"].dt.month)
     records = []
@@ -123,14 +136,14 @@ def evaluate(df: pd.DataFrame, score_cols, min_recall: float) -> pd.DataFrame:
         tune, test = g[g["split"] == "tune"], g[g["split"] == "test"]
         if tune.empty or not tune["fire"].any():
             raise SystemExit(f"{country}: no tune rows with fire, a threshold cannot be chosen")
-        near_share = float((tune["p_near"] >= 0.5).mean()) if "p_near" in g else 0.0
+        near_alerts = int((tune["p_near"] >= 0.5).sum()) if "p_near" in g else None
         for col in score_cols:
             if col in RULES:
                 points = {"rule": 0.5}
             else:
                 points = {"recall": pick_threshold(tune["fire"], tune[col], min_recall)}
-                if near_share:
-                    points["alerts of p_near"] = threshold_for_share(tune[col], near_share)
+                if near_alerts is not None:
+                    points["alerts of p_near"] = threshold_within_budget(tune[col], near_alerts)
             for point, t in points.items():
                 head = {"country": country, "score": col, "operating_point": point}
                 for split, part in (("tune", tune), ("test", test)):
@@ -143,19 +156,22 @@ def evaluate(df: pd.DataFrame, score_cols, min_recall: float) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
-def load(panel: Path, predictions: Path | None) -> tuple[pd.DataFrame, list[str]]:
+def load(panel: Path | str, predictions: Path | str | None) -> tuple[pd.DataFrame, list[str]]:
     """Tune and test rows of the panel, with one column per model of the predictions file."""
-    import pyarrow.parquet as pq
-
+    panel = Path(panel)
     wanted = KEYS + ["country", "admin1", "segment", "split", "fire", "new_cell", *BASELINES]
-    have = [c for c in wanted if c in pq.read_schema(panel).names]
+    try:
+        names = pq.read_schema(panel).names
+    except Exception:
+        names = pq.ParquetFile(panel).schema_arrow.names
+    have = [c for c in wanted if c in names]
     missing = {"burn_date", "cell_lat", "cell_lon", "country", "split", "fire"} - set(have)
     if missing:
         raise SystemExit(f"{panel} lacks {sorted(missing)} (docs/modeling-plan.md, section 4.1)")
     df = pd.read_parquet(panel, columns=have, filters=[("split", "in", ["tune", "test"])])
     df["burn_date"] = pd.to_datetime(df["burn_date"])
     score_cols = [c for c in BASELINES if c in df]
-    if predictions is not None and predictions.exists():
+    if predictions is not None and Path(predictions).exists():
         pred = pd.read_parquet(predictions)
         pred["burn_date"] = pd.to_datetime(pred["burn_date"])
         wide = pred.pivot(index=KEYS, columns="model", values="probability").reset_index()
@@ -170,7 +186,9 @@ def to_markdown(res: pd.DataFrame, min_recall: float) -> str:
 
     def cell(v) -> str:
         if isinstance(v, float):
-            return "" if math.isnan(v) else (f"{v:,.0f}" if v >= 100 else f"{v:.3f}")
+            if math.isnan(v) or math.isinf(v):
+                return "" if math.isnan(v) else "none flagged"
+            return f"{v:,.0f}" if v >= 100 else f"{v:.3f}"
         return f"{v:,}" if isinstance(v, int) else str(v)
 
     def table(part: pd.DataFrame, columns: list[str]) -> list[str]:
