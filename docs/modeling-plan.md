@@ -12,6 +12,10 @@ sections below, which stay as the full version of the brief, to be done only if 
 
 ## 0. Scope decided for the deadline
 
+**State on 2026-11-15:** the data, evaluation and models lanes are done and the model is frozen.
+Results, limits and the files for the interface: `docs/findings/09-daily-model.md`. The interface
+lane is the only one left.
+
 Decided on the night of 2026-11-14, with about 13 hours left and the interface still to build.
 
 | Topic | Full brief (sections 3 to 8) | Scope for the deadline |
