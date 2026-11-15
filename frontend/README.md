@@ -1,4 +1,4 @@
-# Web app: T1
+# Web app: Fireguard
 
 React + TypeScript + Vite, with MapLibre GL and deck.gl for the map. It talks to the API in
 `backend/main.py` plus the extra endpoints in `backend/ui.py`.

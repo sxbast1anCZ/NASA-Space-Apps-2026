@@ -1,4 +1,4 @@
-"""Extra endpoints for the local UI prototype (not part of the shared repo).
+"""Extra endpoints for the full-screen map (frontend/src/studio).
 
 Run from the repo root:
     uvicorn backend.ui:app --reload --port 8000
@@ -25,7 +25,8 @@ from typing import Annotated, Literal
 
 from fastapi import HTTPException, Query
 
-from backend.main import DATA, ROOT, Lat, Lon, app, area_filter, data_through, db
+from backend import main
+from backend.main import ROOT, Lat, Lon, app, area_filter, data_through, db
 
 SAT_CODE = {"Terra": 0, "Aqua": 1, "Suomi-NPP": 2, "NOAA-20": 3, "NOAA-21": 4}
 MAX_DAYS = 45
@@ -35,7 +36,7 @@ To = Annotated[date, Query(alias="to")]
 
 
 def kept() -> str:
-    source = DATA / "harmonized" / "hotspots_kept.parquet"
+    source = main.DATA / "harmonized" / "hotspots_kept.parquet"
     if not source.exists():
         raise HTTPException(503, f"{source} not found. Run scripts/harmonize.py.")
     return f"read_parquet('{source}')"
@@ -146,7 +147,7 @@ def ui_yearly():
 @app.get("/api/ui/regimes")
 @lru_cache(maxsize=1)
 def ui_regimes():
-    path = DATA / "spatial" / "cell_regimes.parquet"
+    path = main.DATA / "spatial" / "cell_regimes.parquet"
     if not path.exists():
         return {"cells": [], "names": []}
     con = db()
@@ -160,7 +161,7 @@ def ui_regimes():
 @app.get("/api/ui/static")
 @lru_cache(maxsize=1)
 def ui_static():
-    path = DATA / "quality" / "static_mask_cells.parquet"
+    path = main.DATA / "quality" / "static_mask_cells.parquet"
     if not path.exists():
         return {"points": []}
     return {"points": db().execute(f"SELECT lat, lon, ndays FROM read_parquet('{path}')").fetchall()}
@@ -267,7 +268,7 @@ def ui_series(west: Lon = None, south: Lat = None, east: Lon = None, north: Lat 
 @lru_cache(maxsize=1)
 def ui_boundaries():
     """Region outlines, simplified to about 2 km and clipped to the mainland box."""
-    cache = DATA / "ui" / "boundaries.geojson"
+    cache = main.DATA / "ui" / "boundaries.geojson"
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))
     import shapely
@@ -342,7 +343,7 @@ def ui_windfield(day: Annotated[date, Query(alias="date")]):
     rows south to north, columns west to east."""
     import httpx
 
-    cache = DATA / "ui" / f"wind_{day}.json"
+    cache = main.DATA / "ui" / f"wind_{day}.json"
     if cache.exists():
         return json.loads(cache.read_text())
     w, s, e, n = WIND_BOX
@@ -411,3 +412,8 @@ def ui_weather(lat: Annotated[float, Query(ge=-90, le=90)], lon: Annotated[float
            "daily": {k: v[0] for k, v in (j.get("daily") or {}).items() if v}, "source": "Open-Meteo"}
     _weather[key] = (time.time(), out)
     return out
+
+
+# backend/main.py mounts the built web app at "/" when frontend/dist exists. Routes added after a
+# mount never match, so the mount goes back to the end of the list.
+app.router.routes.sort(key=lambda route: type(route).__name__ == "Mount")

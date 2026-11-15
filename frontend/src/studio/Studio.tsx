@@ -336,7 +336,7 @@ export default function Studio() {
     last30: t.last30, sensors: t.sensors, downloads: t.downloads,
   }
   const CARD: Record<CardId, (c: { c: Ctx }) => React.ReactNode> = {
-    exposure: () => <TownsExposed lang={lang} exposed={exposed} onTown={(e) => { setFocus({ bounds: [e.lon - 0.45, e.lat - 0.35, e.lon + 0.45, e.lat + 0.35], key: Date.now() }); setTimeout(() => setPick({ kind: 'town', t: e.t, x: window.innerWidth / 2 + 60, y: window.innerHeight / 2 - 120 }), 700) }} />,
+    exposure: () => <TownsExposed known={!!townList?.length} lang={lang} exposed={exposed} onTown={(e) => { setFocus({ bounds: [e.lon - 0.45, e.lat - 0.35, e.lon + 0.45, e.lat + 0.35], key: Date.now() }); setTimeout(() => setPick({ kind: 'town', t: e.t, x: window.innerWidth / 2 + 60, y: window.innerHeight / 2 - 120 }), 700) }} />,
     summary: Summary, top: TopFires, ranking: Ranking, calendar: BurnCalendar, typical: TypicalYear,
     last30: Last30, sensors: Sensors, downloads: Downloads,
   }

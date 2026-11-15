@@ -2,7 +2,7 @@
 export type Lang = 'es' | 'en'
 
 const es = {
-  brand: 'T1',
+  brand: 'Fireguard',
   brandSub: 'Calendario armonizado de fuego · Chile y Argentina',
   search: 'Buscar región o escribir "lat, lon"',
   modeHistory: 'Historia', modeNow: 'Ahora', modeForecast: 'Pronóstico',
@@ -14,7 +14,7 @@ const es = {
   L_towns: 'Poblados', L_hotspots: 'Focos', L_heat: 'Calor', L_density: 'Densidad 3D', L_risk: 'Probabilidad', L_rings: 'Distancia',
   L_wind: 'Viento', L_regimes: 'Regímenes', L_static: 'Industria', L_regions: 'Anomalía regional', L_3d: 'Vista 3D',
   allArea: 'Chile y Argentina', drawBox: 'Dibujar área', clear: 'Quitar selección', drawHint: 'Arrastra en el mapa para dibujar el área',
-  who: '¿Cómo vas a usar T1?', whoSub: 'Elige tu perfil: ordenamos el mapa y los paneles para ti. Puedes cambiarlo cuando quieras.',
+  who: '¿Cómo vas a usar Fireguard?', whoSub: 'Elige tu perfil: ordenamos el mapa y los paneles para ti. Puedes cambiarlo cuando quieras.',
   start: 'Entrar al mapa', profile: 'Perfil',
   more: 'Ver más', less: 'Ver menos',
   last7: 'Focos últimos 7 días', vsMedian: 'vs. mediana 2013–2025', alertsTomorrow: 'Celdas en alerta, próximo día',
@@ -60,7 +60,7 @@ const en: Dict = {
   L_towns: 'Towns', L_hotspots: 'Hotspots', L_heat: 'Heat', L_density: '3D density', L_risk: 'Probability', L_rings: 'Distance',
   L_wind: 'Wind', L_regimes: 'Regimes', L_static: 'Industry', L_regions: 'Regional anomaly', L_3d: '3D view',
   allArea: 'Chile and Argentina', drawBox: 'Draw area', clear: 'Clear selection', drawHint: 'Drag on the map to draw the area',
-  who: 'How will you use T1?', whoSub: 'Pick your profile: we arrange the map and panels for you. You can change it any time.',
+  who: 'How will you use Fireguard?', whoSub: 'Pick your profile: we arrange the map and panels for you. You can change it any time.',
   start: 'Open the map', profile: 'Profile',
   more: 'Show more', less: 'Show less',
   last7: 'Hotspots, last 7 days', vsMedian: 'vs. 2013–2025 median', alertsTomorrow: 'Cells in alert, next day',

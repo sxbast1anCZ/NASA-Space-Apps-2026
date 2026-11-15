@@ -6,7 +6,7 @@ import { gibsTile, type Basemap } from './MapStage.tsx'
 /** BRASA mark: a flame inside a satellite orbit. Drawn inline so it stays sharp at any size. */
 export function BrasaLogo({ size = 36 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="T1">
+    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="Fireguard">
       <defs>
         <linearGradient id="bg-g" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#1c2440" /><stop offset="1" stopColor="#0a0e1c" />
@@ -49,7 +49,7 @@ export function Splash({ lang }: { lang: Lang }) {
   return (
     <div className="splash">
       <div className="splash-logo"><BrasaLogo size={88} /></div>
-      <h1>T1</h1>
+      <h1>Fireguard</h1>
       <p>{lang === 'es' ? 'Cargando 26 años de focos armonizados…' : 'Loading 26 years of harmonized hotspots…'}</p>
       <div className="splash-bar"><i /></div>
       <small>NASA Space Apps Challenge 2026</small>
@@ -94,7 +94,7 @@ export function About({ lang, onClose }: { lang: Lang; onClose: () => void }) {
           <BrasaLogo size={64} />
           <div>
             <span className="eyebrow">NASA Space Apps Challenge 2026 · Antofagasta</span>
-            <h1>T1</h1>
+            <h1>Fireguard</h1>
             <p>{es ? 'Calendario armonizado de actividad de fuego para Chile y Argentina, 2000–2026.' : 'Harmonized burn activity calendar for Chile and Argentina, 2000–2026.'}</p>
           </div>
         </div>

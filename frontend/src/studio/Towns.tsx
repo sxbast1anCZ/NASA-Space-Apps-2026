@@ -13,8 +13,10 @@ const LEVEL = {
 export const LEVEL_HEX = ['#96a0b2', '#fcc43c', '#ff8028', '#eb2828']
 
 /** Panel card: towns near fire, the most exposed first. Expands from 5 to all. */
-export function TownsExposed({ lang, exposed, onTown }: { lang: Lang; exposed: Exposure[]; onTown: (e: Exposure) => void }) {
+export function TownsExposed({ lang, exposed, known, onTown }: { lang: Lang; exposed: Exposure[]; known: boolean; onTown: (e: Exposure) => void }) {
   const [all, setAll] = useState(false)
+  // No town list on this machine is not the same as no town near a fire.
+  if (!known) return <p className="muted">{lang === 'es' ? 'Sin datos de poblados en este equipo: falta NASA_Data_Sources/geonames/cl_ar.tsv.' : 'No town data on this machine: NASA_Data_Sources/geonames/cl_ar.tsv is missing.'}</p>
   if (!exposed.length) return <p className="muted">{lang === 'es' ? 'Ningún poblado de más de 5.000 habitantes a menos de 25 km de un foco.' : 'No town over 5,000 people within 25 km of a hotspot.'}</p>
   const people = exposed.reduce((n, e) => n + e.pop, 0)
   const toward = exposed.filter((e) => e.windToward).length
