@@ -424,7 +424,7 @@ export default function App() {
                       <li>Choose the day above. <b>Latest day</b> shows the fires seen yesterday.</li>
                       <li>Narrow the area: pick a country and a region, or draw a rectangle on the map.</li>
                       <li>Click a fire in the list below, or a red ring on the map: the map zooms to it.</li>
-                      <li>Point at a red ring to see its chance of burning tomorrow and the size of its blue zone.</li>
+                      <li>Point at a red ring to see the chance that the satellite detects it again tomorrow and the size of its blue zone.</li>
                     </ol>
                   </details>
                 )}
@@ -441,7 +441,7 @@ export default function App() {
                             document.querySelector('.map')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                           }}>
                             {!search.admin1 && <b>{f[14] ?? 'Unknown region'}: </b>}
-                            {full.format(f[3])} hotspot{f[3] === 1 ? '' : 's'}, {Math.round(f[4] * 100)}% chance of burning tomorrow
+                            {full.format(f[3])} hotspot{f[3] === 1 ? '' : 's'}, {Math.round(f[4] * 100)}% chance of being detected again tomorrow
                           </button>
                         </li>
                       ))}
@@ -495,7 +495,7 @@ export default function App() {
       <main>
         <MapPicker box={search.box} used={used} drawing={drawing} onDraw={setBox}
           risk={riskWeek ? risk : null} daily={shown} rings={day && showRings ? rings : null} zones={zonesShown} focus={focus}
-          legend={<MapLegend day={shown ? day : null} seen={zonesShown?.seen_date ?? null} rings={!!(day && showRings && rings)}
+          legend={<MapLegend day={shown ? day : null} seen={zonesShown?.available ? zonesShown.seen_date : null} rings={!!(day && showRings && rings)}
             week={riskWeek && risk ? riskWeek : null} />}
           detail={detail?.date === day ? detail : null} onCell={showCell} cellDegrees={meta.cell_degrees} />
         {shown && daily && (
@@ -526,10 +526,11 @@ export default function App() {
         )}
         {zonesShown && (
           <p className="hint" role="status">
-            {zonesShown.summary.fires === 0 ? `No fires on ${zonesShown.seen_date ?? 'the day before'} in ${areaName}.`
+            {!zonesShown.available ? `No fire data for ${day}: the zone file is missing, or the satellite did not observe the day before. This does not mean there were no fires.`
+              : zonesShown.summary.fires === 0 ? `The satellite saw no fires on ${zonesShown.seen_date} in ${areaName}.`
               : `${full.format(zonesShown.summary.fires)} fire${zonesShown.summary.fires === 1 ? '' : 's'} seen on ${zonesShown.seen_date} in ${areaName}; `
-                + `${full.format(zonesShown.summary.likely)} with a chance of 50% or more of burning on ${day} (about `
-                + `${full.format(Math.round(zonesShown.summary.expected_continuing))} expected to keep burning). `
+                + `${full.format(zonesShown.summary.likely)} with a chance of 50% or more of being detected again on ${day} (about `
+                + `${full.format(Math.round(zonesShown.summary.expected_continuing))} expected to be). `
                 + `Their blue zones (8 of 10) add up to ${full.format(zonesShown.summary.area80_km2)} km².`}
             {zonesShown.truncated && ' Too many fires for the whole area: only the largest ones are drawn. Choose a smaller area to see them all.'}
           </p>

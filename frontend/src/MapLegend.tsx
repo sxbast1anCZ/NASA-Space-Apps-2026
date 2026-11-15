@@ -32,13 +32,13 @@ export function MapLegend(props: {
       )}
       {props.seen && (
         <div>
-          <h3>Where each fire may show up on {props.day}, if it keeps burning</h3>
+          <h3>Where each fire may show up on {props.day}, if the satellite detects it again</h3>
           <ul className="legend single">
             <li><span style={{ background: ZONE_COLORS.half, opacity: 0.75 }} />Half of its next hotspots fall here</li>
             <li><span style={{ background: ZONE_COLORS.most, opacity: 0.65, borderColor: ZONE_COLORS.edge, borderWidth: 2 }} />8 of 10 fall inside the outline</li>
             <li><span style={{ background: ZONE_COLORS.nearly, opacity: 0.6 }} />9 of 10 fall here</li>
           </ul>
-          <p>From fires of the same size in 2013-2022. It is where the satellite will likely see the fire again, not the area that will burn.</p>
+          <p>From fires of the same size in 2013-2022. It is where the satellite will likely see the fire again, not the area that will burn. Clouds or the hours of the passes can hide a fire that is still burning.</p>
         </div>
       )}
       {props.rings && (

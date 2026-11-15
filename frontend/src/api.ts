@@ -72,6 +72,7 @@ export type ZoneFire = [number, number, number, number, number, number, number, 
 export type Zones = {
   date: string
   seen_date: string | null
+  available: boolean // false: the zone file is missing or does not cover the day; no data, not "no fires"
   fires: ZoneFire[]
   points: [number, number, number][] // [fire_id, lat, lon]
   truncated: boolean

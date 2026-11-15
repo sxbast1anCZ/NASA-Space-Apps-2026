@@ -279,6 +279,7 @@ def test_app_works_without_the_daily_files(client):
     assert client.get("/api/risk/daily/cell", params=VALPARAISO).status_code == 404
     zones = client.get("/api/risk/daily/zones", params={"date": "2024-02-03"}).json()
     assert zones["fires"] == [] and zones["points"] == [] and zones["summary"]["fires"] == 0
+    assert zones["available"] is False and zones["seen_date"] is None     # no file: no data, not "no fires"
 
 
 def cell_km2(lat: float) -> float:
@@ -321,7 +322,7 @@ def test_zones_give_each_fire_its_chance_radii_area_and_points(daily, tmp_path):
     duckdb.sql(f"COPY ({ZONE_POINTS}) TO '{tmp_path}/risk/fire_zone_points.parquet'")
     main._con = None
     body = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03"}).json()
-    assert body["seen_date"] == "2024-02-02"
+    assert body["seen_date"] == "2024-02-02" and body["available"] is True
     assert [f[0] for f in body["fires"]] == [0, 1]                              # largest first
     assert body["fires"][0][3:8] == [3, 0.21, 0.6, 1.9, 2.7]
     assert body["fires"][0][11:] == [True, 4, 3, "Región de Valparaíso"]
@@ -329,7 +330,10 @@ def test_zones_give_each_fire_its_chance_radii_area_and_points(daily, tmp_path):
     assert body["summary"] == {"fires": 2, "likely": 0, "expected_continuing": 0.3, "area80_km2": 26}
     chile = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03", "country": "Chile"}).json()
     assert [f[0] for f in chile["fires"]] == [0] and {p[0] for p in chile["points"]} == {0}
-    assert daily.get("/api/risk/daily/zones", params={"date": "2024-02-04"}).json()["fires"] == []
+    salta = daily.get("/api/risk/daily/zones", params={"date": "2024-02-03", **SALTA}).json()
+    assert salta["fires"] == [] and salta["available"] is True and salta["seen_date"] == "2024-02-02"   # no fires there
+    other = daily.get("/api/risk/daily/zones", params={"date": "2024-02-04"}).json()
+    assert other["fires"] == [] and other["available"] is False                # a day the file does not cover
 
 
 def test_zone_points_stop_at_the_budget_but_the_largest_fire_keeps_its_own(daily, tmp_path, monkeypatch):

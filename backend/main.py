@@ -88,6 +88,8 @@ def db() -> duckdb.DuckDBPyConnection:
                 else f"SELECT {empty} LIMIT 0"
             con.execute(f"CREATE VIEW {name} AS {source}")
         con.execute("CREATE TABLE daily_days AS SELECT DISTINCT burn_date FROM daily")
+        # Days the zone file covers: a day outside it has no zones, which is not the same as no fires.
+        con.execute("CREATE TABLE zone_days AS SELECT DISTINCT burn_date FROM zones")
         # Region of each cell for the area summary: the one of most of its rows, ties by name.
         con.execute("""
             CREATE TABLE cell_region AS SELECT cell_lat, cell_lon, country, admin1 FROM (
@@ -302,8 +304,11 @@ def risk_daily_zones(
     area90_km2, continued, next_hotspots, next_in_r80, admin1], largest first. `continued` is null for
     the live day. `points`: [fire_id, lat, lon] of the hotspots, about 200 m apart, for as many fires
     as fit in ZONE_POINTS; `truncated` says that some fires were left without points.
+    `available` is false when the zone file is missing or does not cover the day (for example, the
+    satellite did not observe the day before): then an empty list means "no data", not "no fires".
     """
     con = db()
+    available = con.execute("SELECT count(*) FROM zone_days WHERE burn_date = ?", [day]).fetchone()[0] > 0
     where, params = area_filter(west, south, east, north, country, admin1, lat="lat", lon="lon", size=0)
     fires = con.execute(f"""
         SELECT fire_id, round(lat, 4), round(lon, 4), hotspots::INTEGER, round(p_continue::DOUBLE, 3),
@@ -328,7 +333,8 @@ def risk_daily_zones(
         "expected_continuing": round(sum(f[4] or 0 for f in fires), 1),
         "area80_km2": round(sum(f[9] or 0 for f in fires)),
     }
-    return {"date": day, "seen_date": seen, "fires": fires, "points": points,
+    return {"date": day, "seen_date": seen or (day - timedelta(days=1) if available else None),
+            "available": available, "fires": fires, "points": points,
             "truncated": len(sent) < len(fires), "summary": summary}
 
 

@@ -118,6 +118,9 @@ export function MapPicker(props: {
   const ringLayer = useRef<L.LayerGroup | null>(null)
   const zoneLayer = useRef<L.LayerGroup | null>(null)
   const pointsOf = useRef(new Map<number, [number, number][]>())
+  // One canvas per layer, made once and reused: a new L.canvas() on every redraw leaves the old canvas
+  // in the map, and they pile up each time a layer is turned off and on.
+  const renderers = useRef<Record<string, L.Canvas> | null>(null)
   const onDraw = useRef(props.onDraw)
   const onCell = useRef(props.onCell)
   // Outlines and wind arrows only when a cell is wide enough to hold them; far out they hide the colours.
@@ -147,6 +150,15 @@ export function MapPicker(props: {
       pane.style.zIndex = String(band.z)
       pane.style.opacity = String(band.opacity)
       pane.style.pointerEvents = 'none'
+    }
+    const ringPane = m.createPane('rings') // the purple rings, under the cells (overlay pane, 400)
+    ringPane.style.zIndex = '390'
+    ringPane.style.pointerEvents = 'none'
+    renderers.current = {
+      cells: L.canvas(),
+      rings: L.canvas({ pane: 'rings' }),
+      hotspots: L.canvas({ pane: 'hotspots' }),
+      ...Object.fromEntries(ZONE_BANDS.map((b) => [b.pane, L.canvas({ pane: b.pane })])),
     }
     layers.current = L.layerGroup().addTo(m)
     map.current = m
@@ -209,7 +221,7 @@ export function MapPicker(props: {
   useEffect(() => {
     const group = riskLayer.current!
     group.clearLayers()
-    const renderer = L.canvas() // thousands of squares: one canvas instead of one SVG node each
+    const renderer = renderers.current!.cells // thousands of squares: one canvas instead of one SVG node each
     for (const [lat, lon, p, base] of props.risk ?? []) {
       const bin = riskBin(p)
       if (!bin) continue
@@ -244,7 +256,7 @@ export function MapPicker(props: {
     const group = ringLayer.current!
     group.clearLayers()
     if (!props.rings) return
-    const renderer = L.canvas()
+    const renderer = renderers.current!.rings
     // Largest ring first, so the fills add up and the map gets darker near the fire.
     for (const ring of [...props.rings.rings].sort((a, b) => b.km - a.km))
       for (const [lat, lon] of props.rings.points)
@@ -267,7 +279,7 @@ export function MapPicker(props: {
     }
     pointsOf.current = byId
     for (const band of ZONE_BANDS) {
-      const renderer = L.canvas({ pane: band.pane })
+      const renderer = renderers.current![band.pane]
       const circle = (lat: number, lon: number, km: number, color: string) =>
         L.circle([lat, lon], { renderer, radius: km * 1000, stroke: false, fillColor: color, fillOpacity: 1, interactive: false }).addTo(group)
       // The 80% zone gets an edge: a darker disc under each circle, then the circles slightly smaller on top.
@@ -278,7 +290,7 @@ export function MapPicker(props: {
         if (f) circle(lat, lon, band.edge ? f[band.k] * 0.92 : f[band.k], band.color)
       }
     }
-    const hotspots = L.canvas({ pane: 'hotspots' })
+    const hotspots = renderers.current!.hotspots
     for (const [, lat, lon] of z.points)
       L.circleMarker([lat, lon], { renderer: hotspots, radius: 2.5, stroke: false, fillColor: FIRE_RED, fillOpacity: 0.9, interactive: false }).addTo(group)
     for (const f of z.fires) {
