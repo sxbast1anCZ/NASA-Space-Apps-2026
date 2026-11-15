@@ -181,7 +181,8 @@ These are suggestions **(inference)**, not decisions.
 6. **Settle the two open conventions** of the runbook: season label (start year in the table, end
    year in `04-calendar.md`) and anomaly ratio (`(x + 1) / (median + 1)` with a threshold of 10 rows in
    block 4, `x / median` with no threshold in the app). Block 6 favours the block 4 definition
-   (section 2.5).
+   (section 2.5). **Settled since:** the app uses the block 4 definition from pull request 24,
+   and the season is named by its start year (`docs/eda-findings.md`).
 
 Added after blocks 5, 6 and 7:
 

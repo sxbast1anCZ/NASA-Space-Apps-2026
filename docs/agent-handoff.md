@@ -76,7 +76,7 @@ lane at a time.
 
 | Task | Lane | Effort | Priority |
 |---|---|---|---|
-| T1 Merge pull request 21 | docs | 20 min | high |
+| T1 Merge pull request 21 | docs | done | merged, pull request 21 |
 | T2 Fill the Suomi-NPP outages | scripts | done | merged, pull request 23 |
 | T3 One anomaly definition in the app | app | done | merged, pull request 24 |
 | T4 Make notebook 06 run on every machine | notebooks | done | merged, pull request 22 |
@@ -101,6 +101,7 @@ be done now.
   replaces) and `docs/findings/03-harmonization.png` (regenerate with `python scripts/harmonize.py`).
 - **Done when:** the pull request is mergeable, `pytest` passes, the audit comment is in, it is merged.
 - **Do not:** edit the study's numbers.
+- **Done:** merged on 2026-11-14. The study is `docs/findings/03b-pre2012-level.md`; its numbers predate the outage fill of pull request 23 (the level ratio is 1.338 with the fill, 1.345 without).
 
 ### T2. Fill the Suomi-NPP outages (scripts)
 
