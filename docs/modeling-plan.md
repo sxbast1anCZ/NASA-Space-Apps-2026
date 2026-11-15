@@ -80,7 +80,8 @@ frozen for delivery, the app ships with the baseline file and says so.
      latitude and longitude, and `cal_dow`. Add `cal_month`, `cal_doy_sin`, `cal_doy_cos` too: the
      default model does not use them, the comparison run does. Keep the `segment` column: the
      report breaks the scores down by it.
-  4. The same feature rows for the day after the last complete day, with no target, for the live outlook.
+  4. The same feature rows for the day after the last complete day, for the live outlook: in the
+     panel, with `split` = `live` and `fire` empty.
 - **Reuse:** `load_outages`, `target_outage_days`, `eligible_cells` (`scripts/risk_baseline.py`),
   `neighbour_ids` (`scripts/risk_model.py`).
 - **Done when:** fire cell-days per segment match section 3 once outage days are removed; a test
@@ -105,6 +106,8 @@ frozen for delivery, the app ships with the baseline file and says so.
 ### Card 3. Models (Sebastián or Vicente, on Runpod)
 
 - **Files:** `scripts/daily_train.py`, `tests/test_daily_train.py`. `lightgbm` is already in `requirements.txt`.
+- **State:** the script and its tests are on `main`, written against the contract of section 4.1 and
+  tested on a made-up panel. What is left is to run it on the real panel: `python scripts/daily_train.py`.
 - **Steps:**
   1. For Chile and for Argentina: LightGBM with the `PARAMS` of `scripts/risk_model.py`, fitted on
      `train`, early stopping on `tune` by average precision. Features: every `lag_`, `nbr_`, `hist_`
@@ -112,8 +115,9 @@ frozen for delivery, the app ships with the baseline file and says so.
   2. The comparison run: the same with `cal_month`, `cal_doy_sin`, `cal_doy_cos` added.
   3. Threshold of each run on `tune` at recall 0.80 (`daily_eval.pick_threshold`). Keep the run
      with fewer alerts per day. Check it against `p_near` and `p_hist`.
-  4. Refit the kept run on `train` plus `tune` with the number of rounds of step 1. Score `test`
-     once. Predict the day after the last complete day.
+  4. Score `test` once with the model fitted on `train`: it is the model the threshold was chosen
+     for. For the `live` day, refit the kept run on every year with a target, with the number of
+     rounds of step 1, and keep the threshold.
   5. Write `daily/predictions.parquet` (`burn_date`, `cell_lat`, `cell_lon`, `model`, `probability`),
      `risk/cells_daily.parquet` and `risk/daily_metrics.json`.
 - **Runpod:** a CPU pod with 16 or more cores and 32 GB. Copy the repository and `daily/panel.parquet`.
@@ -259,7 +263,7 @@ Lane A writes it, lane B only reads it.
 | `country`, `admin1` | Country and region of most hotspots of the cell |
 | `segment` | `CL-PV`, `CL-OI`, `AR-PV`, `AR-OI`, from the country and the month of `burn_date` |
 | `season_label` | For example `PV 2023/24`, `OI 2024` |
-| `split` | `train`, `tune`, `test` (section 5) |
+| `split` | `train`, `tune`, `test` (section 5); `live` for the day after the last complete day |
 | `fire` | Target, 0 or 1 |
 | `new_cell` | 1 if neither the cell nor its 8 neighbours had fire on D |
 | `p_hist`, `p_persist`, `p_near` | The three baselines (section 4.3) |
