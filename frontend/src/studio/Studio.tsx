@@ -2,7 +2,7 @@ import {
   Box as BoxIcon, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, CircleDot, Clock, Factory, Flame, Globe2, Layers,
   Map as MapIcon, Microscope, Moon, Sun, Home, SlidersHorizontal, Plus, Minus as MinusIcon, MousePointerSquareDashed, Pause, Play, Radar, Search, Siren, Sparkles, Trees, Wind, X,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BurnCalendar, Downloads, Last30, Ranking, Sensors, Summary, TopFires, TypicalYear, type Ctx } from './Cards.tsx'
 import { DAILY_BINS, FRP_BINS, INFERNO, RATIO_BINS, REGIME_HEX, WEEKLY_BINS } from './colors.ts'
 import type { Area, CellDetail, Daily, GeoFeature, Hotspots, Meta, Regions, Rings } from './data.ts'
@@ -65,7 +65,7 @@ export default function Studio() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (store.get('brasa.theme') as 'dark' | 'light')
     || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
   // Set before paint, so charts and the map read the right theme on their first render.
-  document.documentElement.dataset.theme = theme
+  if (document.documentElement.dataset.theme !== theme) document.documentElement.dataset.theme = theme
   useEffect(() => { store.set('brasa.theme', theme) }, [theme])
   const [personaId, setPersonaId] = useState<PersonaId | null>((store.get('brasa.persona') as PersonaId) || null)
   const persona = PERSONAS.find((p) => p.id === personaId) ?? PERSONAS[0]
@@ -79,8 +79,11 @@ export default function Studio() {
   const [focus, setFocus] = useState<{ bounds: number[]; key: number; pitch?: number } | null>(null)
   const [drawing, setDrawing] = useState(false)
   const [pick, setPick] = useState<Pick | null>(null)
-  const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null)
-  const [panelOpen, setPanelOpen] = useState(true)
+  // The hover tooltip has its own small component: a mouse move must not re-render the whole page.
+  const hoverRef = useRef<HoverFn>(() => {})
+  const onHover = useCallback<HoverFn>((text, x, y) => hoverRef.current(text, x, y), [])
+  // On a phone the map comes first: the panel starts closed and opens as a sheet from the bottom.
+  const [panelOpen, setPanelOpen] = useState(() => typeof window === 'undefined' || window.innerWidth > 720)
   const [showAll, setShowAll] = useState(false)
   const [collapsed, setCollapsed] = useState<Partial<Record<CardId, boolean>>>({})
   const [moreLayers, setMoreLayers] = useState(false)
@@ -284,7 +287,7 @@ export default function Studio() {
   }, [wantWind, imageryDate, playing, through])
 
   const mapHot = mode === 'now' ? nowHot : mode === 'forecast' && !fcWeek ? fcHot : null
-  const dayWindow: [number, number] = mode === 'now' ? [Math.max(0, dayEnd - span + 1), dayEnd] : [0, 0]
+  const dayWindow = useMemo<[number, number]>(() => (mode === 'now' ? [Math.max(0, dayEnd - span + 1), dayEnd] : [0, 0]), [mode, dayEnd, span])
   const shownCount = useMemo(() => {
     if (!mapHot) return 0
     let n = 0
@@ -339,10 +342,11 @@ export default function Studio() {
     last30: t.last30, sensors: t.sensors, downloads: t.downloads,
   }
   const CARD: Record<CardId, (c: { c: Ctx }) => React.ReactNode> = {
-    exposure: () => <TownsExposed known={!!townList?.length} lang={lang} exposed={exposed} onTown={(e) => { setFocus({ bounds: [e.lon - 0.45, e.lat - 0.35, e.lon + 0.45, e.lat + 0.35], key: Date.now() }); setTimeout(() => setPick({ kind: 'town', t: e.t, x: window.innerWidth / 2 + 60, y: window.innerHeight / 2 - 120 }), 700) }} />,
+    exposure: () => null,
     summary: Summary, top: TopFires, ranking: Ranking, calendar: BurnCalendar, typical: TypicalYear,
     last30: Last30, sensors: Sensors, downloads: Downloads,
   }
+  const exposureCard = <TownsExposed known={!!townList?.length} lang={lang} exposed={exposed} onTown={(e) => { setFocus({ bounds: [e.lon - 0.45, e.lat - 0.35, e.lon + 0.45, e.lat + 0.35], key: Date.now() }); setTimeout(() => setPick({ kind: 'town', t: e.t, x: window.innerWidth / 2 + 60, y: window.innerHeight / 2 - 120 }), 700) }} />
   const regimeNames = t.regimes
 
   if (error) return <div className="fatal glass"><Flame /> <div><b>API</b><p>{error}</p><p className="muted">uvicorn backend.ui:app --port 8000</p></div></div>
@@ -355,7 +359,7 @@ export default function Studio() {
         weekly={mode === 'forecast' ? weekly : null} rings={mode !== 'history' ? rings : null}
         boundaries={boundaries} regionRows={regions?.regions ?? null} area={area} hotFilter={hotFilter} windField={layers.has('wind') ? windField : null} townList={townList} exposed={exposed} showTowns={layers.has('towns')} focus={focus} drawing={drawing}
         onBox={(b) => selectBox(b)} onRegion={selectRegion} onPick={setPick} regimeNames={regimeNames}
-        onHover={(text, x, y) => setHover(text ? { text, x, y } : null)}
+        onHover={onHover}
       />
       <div className="vignette" />
 
@@ -433,7 +437,7 @@ export default function Studio() {
                     <h2>{CARD_TITLE[id]}</h2><ChevronDown size={15} style={{ transform: isOpen ? 'rotate(180deg)' : '' }} />
                   </button>
                 )}
-                {isOpen && <C c={ctx} />}
+                {isOpen && (id === 'exposure' ? exposureCard : <C c={ctx} />)}
               </section>
             )
           })}
@@ -560,7 +564,7 @@ export default function Studio() {
       )}
       {aboutOpen && <About lang={lang} onClose={() => setAboutOpen(false)} />}
       {!meta && <Splash lang={lang} />}
-      {hover && !pick && <div className="hover glass" style={{ left: hover.x + 14, top: hover.y + 14 }}>{shortRegion(hover.text)}</div>}
+      <HoverTip bind={hoverRef} hidden={!!pick} />
       {pick?.kind === 'town' && townList && <TownCard lang={lang} town={townList[pick.t]} exposure={exposed.find((e) => e.t === pick.t)} hot={mode === 'now' ? nowHot : fcHot}
         x={pick.x} y={pick.y} onClose={() => setPick(null)} onRegion={(r) => { setPick(null); const c = regionCountry.get(r); if (c) selectRegion(c, r) }} />}
       {layers.has('wind') && (windField || windErr) && (
@@ -575,6 +579,18 @@ export default function Studio() {
       {!personaId && <Onboarding lang={lang} onPick={choosePersona} setLang={setLang} />}
     </div>
   )
+}
+
+// ------------------------------------------------------------------ hover tooltip
+type HoverFn = (text: string | null, x: number, y: number) => void
+function HoverTip({ bind, hidden }: { bind: React.RefObject<HoverFn>; hidden: boolean }) {
+  const [h, setH] = useState<{ text: string; x: number; y: number } | null>(null)
+  useEffect(() => {
+    bind.current = (text, x, y) => setH((o) => (!text ? null : o && o.text === text && o.x === x && o.y === y ? o : { text, x, y }))
+    return () => { bind.current = () => {} }
+  }, [bind])
+  if (!h || hidden) return null
+  return <div className="hover glass" style={{ transform: `translate(${h.x + 14}px, ${h.y + 14}px)` }}>{shortRegion(h.text)}</div>
 }
 
 // ------------------------------------------------------------------ search

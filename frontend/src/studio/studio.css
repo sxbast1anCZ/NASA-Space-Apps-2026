@@ -213,7 +213,7 @@ h1, h2, h3 { font-family: var(--font-ui); font-weight: 600; margin: 0; letter-sp
 .archive input { background: rgba(var(--fg-rgb), 0.06); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; color-scheme: dark; }
 
 /* ---------------------------------------------------------------- floating cards */
-.hover { position: absolute; z-index: 6; pointer-events: none; padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+.hover { position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none; will-change: transform; padding: 6px 10px; font-size: 12px; border-radius: 10px; }
 .pick { position: absolute; z-index: 7; width: 320px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; animation: rise 0.2s ease both; background: var(--glass-strong); }
 .pick .close { position: absolute; top: 10px; right: 10px; color: var(--muted); width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; }
 .pick .close:hover { background: rgba(var(--fg-rgb), 0.08); color: var(--ink); }
@@ -561,3 +561,67 @@ h1, h2, h3 { font-family: var(--font-ui); font-weight: 600; margin: 0; letter-sp
 .kpi.filt { border-color: rgba(255, 140, 50, 0.45); }
 .legend-head { flex-wrap: wrap; justify-content: flex-start; }
 .legend-toggle { margin-left: auto; }
+
+/* ---------------------------------------------------------------- phones
+   Last in the file so it wins over the desktop rules above. Map first: a compact two-row header,
+   layers as a horizontal strip, the panel as a bottom sheet over the timeline, months that scroll. */
+@media (max-width: 720px) {
+  .topbar { top: 8px; left: 8px; right: 8px; gap: 6px; flex-wrap: wrap; }
+  .event, .kbd-hint { display: none; }
+  .brand { padding: 5px 10px 5px 5px; gap: 7px; }
+  .brand { padding: 5px; } .brand b, .brand span { display: none; }   /* the logo alone: the row must fit personas, theme and language */
+  .logo { width: 30px; height: 30px; border-radius: 9px; }
+  .personas { margin-left: auto; padding: 3px; }
+  .personas button { padding: 7px 8px; }
+  .lang { padding: 3px; } .lang button { padding: 5px 7px; }
+  .theme-btn { width: 38px; display: grid; place-items: center; }
+  .search { flex: 1 1 100%; order: 3; padding: 0 12px; }
+  .search input { padding: 9px 0; font-size: 16px; } /* 16px keeps iOS from zooming on focus */
+
+  .rail { top: 104px; left: 8px; right: 8px; width: auto; flex-direction: row; align-items: center; gap: 2px; padding: 4px;
+    overflow-x: auto; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail span, .rail-title, .rail hr { display: none; }
+  .rail button { flex: 0 0 auto; width: 42px; height: 40px; padding: 0; justify-content: center; }
+  .rail-more { width: auto !important; padding: 0 10px !important; }
+  .basemaps { top: 156px; left: 8px; right: 8px; width: auto; max-height: calc(100% - 290px); overflow-y: auto; }
+  .imagery { top: 156px; max-width: calc(100% - 16px); font-size: 11px; padding: 5px 10px; }
+  .imagery small { display: none; }
+  .wind-chip, .legend, .maplibregl-ctrl-bottom-right { display: none; }
+
+  .panel { left: 8px; right: 8px; width: auto; top: auto; bottom: 112px; height: 52%; max-height: calc(100% - 270px); min-height: 220px; }
+  .panel.closed { transform: translateY(calc(100% + 8px)); }
+  .panel.closed > :not(.panel-toggle) { visibility: hidden; }
+  .panel-toggle { right: 10px; top: -46px; width: 40px; height: 40px; border-radius: 13px; }
+  .panel-toggle svg { transform: rotate(-90deg); }
+  .panel-head { padding: 12px 14px 10px; }
+  .panel-head h1 { font-size: 19px; }
+  .cards { padding: 10px; }
+  .kpi-value { font-size: 24px; }
+
+  .timeline { left: 8px; right: 8px; bottom: 8px; height: 96px; gap: 6px; padding: 6px; }
+  .modes { width: 44px; } .modes button { padding: 4px; justify-content: center; } .modes small, .modes b { display: none; }
+  .track { gap: 8px; padding: 0 4px; }
+  .play { width: 38px; height: 38px; }
+  .bars { height: 40px; }
+  .days .bars { height: 46px; }
+  .dbar span { display: none; } .dbar.end span { display: block; }   /* one date under the bars, not fourteen on top of each other */
+  .track > .seg { flex-direction: column; padding: 2px; } .track > .seg button { padding: 2px 6px; font-size: 11px; }
+  .months { overflow-x: auto; scrollbar-width: none; margin-top: 10px; }
+  .months::-webkit-scrollbar { display: none; }
+  .months button, .months button:first-child { flex: 0 0 auto; padding: 3px 8px; white-space: nowrap; }
+  .fc { gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .fc::-webkit-scrollbar { display: none; }
+  .fc-chip.big { padding: 8px 10px; }
+  .fc-weeks { display: flex; flex-wrap: nowrap; }
+  .fc .lbl, .archive { display: none; }
+
+  .pick { left: 8px !important; right: 8px; top: 156px !important; width: auto; max-height: calc(100% - 290px); overflow-y: auto; }
+  .onboard { padding: 10px; }
+  .onboard-box { padding: 22px 16px 16px; }
+  .onboard h1 { font-size: 24px; }
+  .persona-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .persona-card { padding: 12px 14px; }
+  .persona-card ul { display: none; }
+  .studio:has(.stage:hover) .panel, .studio:has(.stage:hover) .rail { opacity: 1; }
+}
