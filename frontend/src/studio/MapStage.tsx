@@ -116,7 +116,6 @@ export function MapStage(p: MapProps) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const overlay = useRef<MapboxOverlay | null>(null)
-  const [t, setT] = useState(0)
   const [zoom, setZoom] = useState(4)
   const [draft, setDraft] = useState<number[] | null>(null)
   const props = useRef(p)
@@ -159,16 +158,6 @@ export function MapStage(p: MapProps) {
       { padding: { top: 90, bottom: 170, left: 440, right: 110 }, maxZoom: 9, duration: 1400 })
   }, [p.focus?.key])
 
-  // Animation clock for the wind streaks and the pulse of the newest hotspots.
-  const animate = (p.mode === 'forecast' && p.layers.has('wind')) || (p.mode === 'now' && p.layers.has('hotspots')) || (p.showTowns && p.exposed.length > 0)
-  useEffect(() => {
-    if (!animate) return
-    let id = 0
-    const tick = () => { setT((performance.now() / 1000) % 1000); id = requestAnimationFrame(tick) }
-    id = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(id)
-  }, [animate])
-
   // Wind flow: particles carried by the wind field, drawn on a canvas above the map with fading trails.
   const cv = useRef<HTMLCanvasElement>(null)
   const windOn = p.layers.has('wind') && !!p.windField
@@ -184,19 +173,36 @@ export function MapStage(p: MapProps) {
     resize()
     const N = Math.round(Math.min(3600, (c.clientWidth * c.clientHeight) / (light0 ? 380 : 300)))
     const box = [f.west, f.south, f.west + f.step * (f.nx - 1), f.south + f.step * (f.ny - 1)]
-    type P = { lon: number; lat: number; age: number; life: number }
-    const spawn = (q: P) => {
+    // x, y: the particle on screen, kept from the last frame so each frame projects one point per particle.
+    type P = { lon: number; lat: number; age: number; life: number; x: number; y: number }
+    let view = [0, 0, 0, 0]
+    const readView = () => {
       const b = m.getBounds()
-      const w = Math.max(box[0], b.getWest()), e = Math.min(box[2], b.getEast()), s = Math.max(box[1], b.getSouth()), n = Math.min(box[3], b.getNorth())
+      view = [Math.max(box[0], b.getWest()), Math.max(box[1], b.getSouth()), Math.min(box[2], b.getEast()), Math.min(box[3], b.getNorth())]
+    }
+    const spawn = (q: P) => {
+      const [w, s, e, n] = view
       q.lon = w + Math.random() * Math.max(0.01, e - w); q.lat = s + Math.random() * Math.max(0.01, n - s)
       q.age = 0; q.life = 40 + Math.random() * 60
+      const a = m.project([q.lon, q.lat])
+      q.x = a.x; q.y = a.y
       return q
     }
-    const ps: P[] = Array.from({ length: N }, () => spawn({ lon: 0, lat: 0, age: 0, life: 0 }))
+    readView()
+    const ps: P[] = Array.from({ length: N }, () => spawn({ lon: 0, lat: 0, age: 0, life: 0, x: 0, y: 0 }))
     const light = props.current.theme === 'light' && props.current.basemap === 'dark'
+    // Streaks grouped in a few colour bands by speed: one stroke per band instead of one per particle.
+    const BANDS = 6
+    const bandColor = Array.from({ length: BANDS }, (_, i) => {
+      const t = (i + 0.5) / BANDS
+      return light
+        ? `rgba(${Math.round(40 + 40 * t)},${Math.round(90 - 30 * t)},${Math.round(160 - 60 * t)},${0.18 + 0.45 * t})`
+        : `rgba(${Math.round(200 + 55 * t)},${Math.round(235 - 60 * t)},${Math.round(255 - 140 * t)},${0.3 + 0.55 * t})`
+    })
+    const segs: number[][] = Array.from({ length: BANDS }, () => [])
     let id = 0, moving = false
     const onMove = () => { moving = true; ctx.clearRect(0, 0, c.clientWidth, c.clientHeight) }
-    const onEnd = () => { moving = false; ps.forEach(spawn) }
+    const onEnd = () => { moving = false; readView(); ps.forEach(spawn) }
     m.on('movestart', onMove); m.on('move', onMove); m.on('moveend', onEnd)
     window.addEventListener('resize', resize)
     const frame = () => {
@@ -209,20 +215,25 @@ export function MapStage(p: MapProps) {
       ctx.lineWidth = 1.3
       ctx.lineCap = 'round'
       const degPerPx = 360 / (512 * 2 ** m.getZoom())
+      const k = degPerPx / 22 // about 1 pixel per frame at 22 km/h
+      for (const s of segs) s.length = 0
       for (const q of ps) {
         const w = windAt(f, q.lat, q.lon)
         if (!w || q.age++ > q.life) { spawn(q); continue }
         const sp = Math.hypot(w[0], w[1])
-        const k = degPerPx / 22 // about 1 pixel per frame at 22 km/h
         const lon2 = q.lon + w[0] * k // Mercator: the same pixel step is cos(lat) degrees of latitude
         const lat2 = q.lat + w[1] * k * Math.cos((q.lat * Math.PI) / 180)
-        const a = m.project([q.lon, q.lat]), b = m.project([lon2, lat2])
-        const t = Math.min(1, sp / 45)
-        ctx.strokeStyle = light
-          ? `rgba(${Math.round(40 + 40 * t)},${Math.round(90 - 30 * t)},${Math.round(160 - 60 * t)},${0.18 + 0.45 * t})`
-          : `rgba(${Math.round(200 + 55 * t)},${Math.round(235 - 60 * t)},${Math.round(255 - 140 * t)},${0.3 + 0.55 * t})`
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke()
-        q.lon = lon2; q.lat = lat2
+        const b = m.project([lon2, lat2])
+        segs[Math.min(BANDS - 1, Math.floor((Math.min(1, sp / 45)) * BANDS))].push(q.x, q.y, b.x, b.y)
+        q.lon = lon2; q.lat = lat2; q.x = b.x; q.y = b.y
+      }
+      for (let i = 0; i < BANDS; i++) {
+        const s = segs[i]
+        if (!s.length) continue
+        ctx.strokeStyle = bandColor[i]
+        ctx.beginPath()
+        for (let j = 0; j < s.length; j += 4) { ctx.moveTo(s[j], s[j + 1]); ctx.lineTo(s[j + 2], s[j + 3]) }
+        ctx.stroke()
       }
     }
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) frame()
@@ -301,13 +312,42 @@ export function MapStage(p: MapProps) {
     return m
   }, [p.regionRows])
 
+  // Layer data derived once per input. deck.gl rebuilds a layer's buffers whenever its data array is a new
+  // object, so these must not be recomputed while the map moves or animates.
+  const [mask, regions] = useMemo(() => {
+    const feats = p.boundaries ?? []
+    return [feats.filter((f) => f.properties.mask), feats.filter((f) => !f.properties.mask)]
+  }, [p.boundaries])
+  const dimmed = useMemo(() => {
+    const a = p.area
+    if (a.kind !== 'country' && a.kind !== 'region') return null
+    return regions.filter((f) => (a.kind === 'country' ? f.properties.country !== a.country : f.properties.admin1 !== a.admin1))
+  }, [regions, p.area])
+  const densityMax = useMemo(() => (p.density ?? []).reduce((m, c) => Math.max(m, c[2]), 1), [p.density])
+  const riskCells = useMemo(() => (p.daily ? p.daily.cells.filter((c) => c[2] >= DAILY_BINS[0].from) : []), [p.daily])
+  const alertCells = useMemo(() => riskCells.filter((c) => c[4] === 1), [riskCells])
+  const heatCells = useMemo(() => (p.daily ? p.daily.cells.filter((c) => c[2] >= 0.02) : []), [p.daily])
+  const weeklyCells = useMemo(() => (p.weekly ? p.weekly.filter((c) => c[2] >= WEEKLY_BINS[0].from) : []), [p.weekly])
+  const exposedBy = useMemo(() => new Map(p.exposed.map((e) => [e.t, e])), [p.exposed])
+  const haloTowns = useMemo(() => p.exposed.filter((e) => e.windToward || e.level >= 2), [p.exposed])
+  // Fewer houses when zoomed out: only towns near fire, and big cities from zoom 6.
+  const zoomBand = zoom >= 8 ? 8 : zoom >= 6 ? 6 : zoom >= 5.5 ? 5.5 : 0
+  const shownTowns = useMemo(() => {
+    const tl = p.townList
+    if (!tl) return []
+    return tl.map((_, i) => i).filter((i) => {
+      const e = exposedBy.get(i)
+      if (e) return zoomBand >= 5.5 || e.level >= 2 || tl[i][3] >= 50000
+      return zoomBand >= 6 && tl[i][3] >= (zoomBand >= 8 ? 5000 : 100000)
+    })
+  }, [p.townList, exposedBy, zoomBand])
+
+  // Layers that change only when their inputs change. The animated ones (wind streaks, pulse of the newest
+  // hotspots, halo of exposed towns) are functions of the clock, built on every frame outside React.
   const layers = useMemo(() => {
-    const L: Layer[] = []
+    const L: (Layer | ((t: number) => Layer))[] = []
     const lightMap = p.theme === 'light' && p.basemap === 'dark'
     const on = (id: LayerId) => p.layers.has(id)
-    const feats = p.boundaries ?? []
-    const mask = feats.filter((f) => f.properties.mask)
-    const regions = feats.filter((f) => !f.properties.mask)
     const sel = p.area.kind === 'region' ? `${p.area.country}|${p.area.admin1}` : ''
 
     L.push(new GeoJsonLayer({ id: 'mask', data: mask as any, filled: true, stroked: false, getFillColor: p.theme === 'light' && p.basemap === 'dark' ? [233, 237, 243, 170] : [4, 6, 12, 150], updateTriggers: { getFillColor: [p.theme, p.basemap] } }))
@@ -325,7 +365,7 @@ export function MapStage(p: MapProps) {
 
     if (p.mode === 'history') {
       if (on('density') && p.density) {
-        const max = Math.max(1, ...p.density.map((c) => c[2]))
+        const max = densityMax
         L.push(new SolidPolygonLayer({
           id: 'density', data: p.density, pickable: true, extruded: p.tilt, material: { ambient: 0.6, diffuse: 0.5 },
           getPolygon: (c: number[]) => cell(c[0], c[1]),
@@ -344,7 +384,7 @@ export function MapStage(p: MapProps) {
     }
     if (p.mode === 'forecast' && on('heat') && p.daily && !p.weekly) {
       L.push(new HeatmapLayer({
-        id: 'heat-forecast', data: p.daily.cells.filter((c) => c[2] >= 0.02), getPosition: (c: number[]): [number, number] => [c[1] + 0.125, c[0] + 0.125],
+        id: 'heat-forecast', data: heatCells, getPosition: (c: number[]): [number, number] => [c[1] + 0.125, c[0] + 0.125],
         getWeight: (c: number[]) => c[2], radiusPixels: 46, intensity: 1.4, threshold: 0.05, colorRange: HEAT_RANGE, opacity: 0.85,
       }))
     }
@@ -367,24 +407,23 @@ export function MapStage(p: MapProps) {
     if (p.mode === 'forecast') {
       if (on('risk') && p.weekly) {
         L.push(new SolidPolygonLayer({
-          id: 'weekly', data: p.weekly.filter((c) => c[2] >= WEEKLY_BINS[0].from), pickable: false,
+          id: 'weekly', data: weeklyCells, pickable: false,
           getPolygon: (c: number[]) => cell(c[0], c[1]), getFillColor: (c: number[]) => binColor(WEEKLY_BINS, c[2], 190),
         }))
       } else if (on('risk') && p.daily) {
-        const shown = p.daily.cells.filter((c) => c[2] >= DAILY_BINS[0].from)
         L.push(new SolidPolygonLayer({
-          id: 'risk', data: shown, pickable: true, extruded: p.tilt,
+          id: 'risk', data: riskCells, pickable: true, extruded: p.tilt,
           getPolygon: (c: number[]) => cell(c[0], c[1]),
           getElevation: (c: number[]) => c[2] * 140000,
           getFillColor: (c: number[]) => binColor(DAILY_BINS, c[2], c[2] < 0.05 ? 70 : c[2] < 0.1 ? 140 : 210),
         }))
         L.push(new PolygonLayer({
-          id: 'alerts', data: shown.filter((c) => c[4] === 1), filled: false, stroked: true,
+          id: 'alerts', data: alertCells, filled: false, stroked: true,
           lineWidthMinPixels: 1, getLineColor: lightMap ? [120, 20, 10, 150] : [255, 236, 210, 120], getPolygon: (c: number[]) => cell(c[0], c[1]),
         }))
       }
       if (on('wind') && windPaths.length && !p.weekly) {
-        L.push(new TripsLayer({
+        L.push((t) => new TripsLayer({
           id: 'wind', data: windPaths, getPath: (d: { path: number[][] }) => d.path as [number, number][],
           getTimestamps: (d: { ts: number[] }) => d.ts, getColor: lightMap ? [20, 90, 150] : [190, 235, 255], opacity: 0.9,
           widthMinPixels: 2, capRounded: true, jointRounded: true, trailLength: 45, currentTime: (t * 60) % 130, fadeTrail: true,
@@ -432,31 +471,32 @@ export function MapStage(p: MapProps) {
         stroked: lightMap, getLineColor: [90, 20, 0, 160], lineWidthMinPixels: 0.6,
       }))
       if (p.mode === 'now' && newest.length && newest.length < 20000) {
-        const k = (t * 0.9) % 1
-        L.push(new ScatterplotLayer({
-          id: 'hot-pulse', data: newest, getPosition: pos, radiusUnits: 'pixels', filled: false, stroked: true,
-          getRadius: 3 + k * 16, getLineColor: [255, 200, 120, Math.round(180 * (1 - k))], lineWidthMinPixels: 1,
-          updateTriggers: { getRadius: k, getLineColor: k },
-        }))
+        // Constant accessors: the pulse moves through radiusScale and opacity, so no buffer is rebuilt per frame.
+        L.push((t) => {
+          const k = (t * 0.9) % 1
+          return new ScatterplotLayer({
+            id: 'hot-pulse', data: newest, getPosition: pos, radiusUnits: 'pixels', filled: false, stroked: true,
+            getRadius: 1, radiusScale: 3 + k * 16, getLineColor: [255, 200, 120, 180], opacity: 1 - k, lineWidthMinPixels: 1,
+          })
+        })
       }
     }
 
     if (p.showTowns && p.townList) {
-      const ex = new Map(p.exposed.map((e) => [e.t, e]))
-      const zNow = map.current?.getZoom() ?? zoom
-      // Fewer houses when zoomed out: only towns near fire, and big cities from zoom 6.
-      const big = p.townList.map((_, i) => i).filter((i) => {
-        const e = ex.get(i)
-        if (e) return zNow >= 5.5 || e.level >= 2 || p.townList![i][3] >= 50000
-        return zNow >= 6 && p.townList![i][3] >= (zNow >= 8 ? 5000 : 100000)
-      })
-      L.push(new ScatterplotLayer({
-        id: 'town-halo', data: p.exposed.filter((e) => e.windToward || e.level >= 2), radiusUnits: 'pixels',
-        getPosition: (e: Exposure): [number, number] => [e.lon, e.lat], getRadius: () => 14 + (t * 14) % 10,
-        filled: false, stroked: true, lineWidthMinPixels: 1.5,
-        getLineColor: (e: Exposure) => [...LEVEL_RGB[e.level], Math.round(200 * (1 - ((t * 14) % 10) / 10))] as [number, number, number, number],
-        updateTriggers: { getRadius: t, getLineColor: t },
-      }))
+      const ex = exposedBy
+      const zNow = zoom
+      const big = shownTowns
+      if (haloTowns.length) {
+        L.push((t) => {
+          const k = ((t * 14) % 10) / 10
+          return new ScatterplotLayer({
+            id: 'town-halo', data: haloTowns, radiusUnits: 'pixels',
+            getPosition: (e: Exposure): [number, number] => [e.lon, e.lat], getRadius: 1, radiusScale: 14 + k * 10,
+            filled: false, stroked: true, lineWidthMinPixels: 1.5, opacity: 1 - k,
+            getLineColor: (e: Exposure) => [...LEVEL_RGB[e.level], 200] as [number, number, number, number],
+          })
+        })
+      }
       // 3D houses that keep about the same size on screen (metres per pixel at about 33 degrees south).
       const mpp = (78271.5 * 0.84) / 2 ** zNow
       L.push(new SimpleMeshLayer({
@@ -479,7 +519,7 @@ export function MapStage(p: MapProps) {
     const a = p.area
     if (a.kind === 'country' || a.kind === 'region') {
       L.push(new GeoJsonLayer({
-        id: 'dim', data: regions.filter((f) => (a.kind === 'country' ? f.properties.country !== a.country : f.properties.admin1 !== a.admin1)) as any,
+        id: 'dim', data: dimmed as any,
         filled: true, stroked: false,
         getFillColor: lightMap ? [233, 237, 243, a.kind === 'country' ? 215 : 150] : [4, 6, 12, a.kind === 'country' ? 200 : 130],
         updateTriggers: { getFillColor: [lightMap, a.kind] },
@@ -500,11 +540,26 @@ export function MapStage(p: MapProps) {
     }
     return L
   }, [p.mode, p.layers, p.tilt, p.hotspots, hot, newest, p.density, p.regimes, p.statics, p.daily, p.weekly, p.rings,
-    p.boundaries, regionColor, p.area, draft, windPaths, t, p.theme, p.basemap, p.showTowns, p.townList, p.exposed, zoom])
+    mask, regions, dimmed, densityMax, riskCells, alertCells, heatCells, weeklyCells, exposedBy, haloTowns, shownTowns,
+    regionColor, p.area, draft, windPaths, p.theme, p.basemap, p.showTowns, p.townList, p.exposed, zoom])
+
+  // Animation clock: a requestAnimationFrame loop that hands deck.gl the layers of the frame. It never
+  // touches React state, so the page does not re-render 60 times a second.
+  const animated = layers.some((l) => typeof l === 'function')
+  useEffect(() => {
+    const o = overlay.current
+    if (!o) return
+    const build = (t: number) => layers.map((l) => (typeof l === 'function' ? l(t) : l))
+    o.setProps({ layers: build((performance.now() / 1000) % 1000) })
+    if (!animated || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    let id = 0
+    const tick = () => { o.setProps({ layers: build((performance.now() / 1000) % 1000) }); id = requestAnimationFrame(tick) }
+    id = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(id)
+  }, [layers, animated])
 
   useEffect(() => {
     overlay.current?.setProps({
-      layers,
       onClick: (info: PickingInfo) => {
         if (props.current.drawing) return
         const cur = props.current
@@ -541,7 +596,7 @@ export function MapStage(p: MapProps) {
       },
       getCursor: ({ isHovering }: { isHovering: boolean }) => (props.current.drawing ? 'crosshair' : isHovering ? 'pointer' : 'grab'),
     })
-  }, [layers])
+  }, [])
 
   return (
     <>
