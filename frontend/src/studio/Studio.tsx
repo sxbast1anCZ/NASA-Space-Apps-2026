@@ -57,7 +57,7 @@ function FilterPanel({ lang, mode, value, onChange, onClose }: { lang: Lang; mod
 }
 
 export default function Studio() {
-  const [lang, setLang] = useState<Lang>((store.get('brasa.lang') as Lang) || 'es')
+  const [lang, setLang] = useState<Lang>((store.get('brasa.lang') as Lang) || 'en')
   const t = DICT[lang]
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (store.get('brasa.theme') as 'dark' | 'light')
     || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'))
