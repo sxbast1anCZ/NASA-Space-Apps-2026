@@ -1,4 +1,61 @@
-# NASA Space Apps 2026: Harmonization of MODIS and VIIRS Hot Spots
+# Fireguard: one hotspot record for Chile and Argentina
+
+NASA Space Apps Challenge 2026 · Harmonization of MODIS and VIIRS Hot Spots · Team T1, Antofagasta, Chile
+
+Fireguard puts 26 years of NASA FIRMS hotspots for Chile and Argentina (November 2000 to November
+2026) on one VIIRS-equivalent scale, builds a burn calendar for any region and period, and shows where
+fire activity is most likely the next day, with the reason for each alert.
+
+![Fireguard: the burn calendar of Valparaíso and the hotspots of February 2024 on one scale](docs/submission/fireguard-screenshot.jpg)
+
+- **Demo, 7 slides:** <https://docs.google.com/presentation/d/1dN5mD0MKahP4nwiFAlwgEIDQ2wpWr2eu/edit?usp=sharing>
+- **Everything for the judges in one place:** [`docs/submission/README.md`](docs/submission/README.md)
+- **How to install and run it:** [`docs/submission/install-and-run.md`](docs/submission/install-and-run.md)
+
+## Why
+
+VIIRS (375 m pixel, since 2012) sees about three times as many hotspots as MODIS (1 km pixel, since
+2000) for the same fires. Put side by side, the raw record jumps in 2012 because the sensor changed,
+not the fire. MODIS is near the end of its life, so without harmonization today's detections lose
+their history.
+
+## Results
+
+Each figure comes from the document linked next to it.
+
+| What | Result | Source |
+|---|---|---|
+| Quality filter | 8,042,380 FIRMS detections; 7,000,520 kept (12.95% removed: low confidence, industrial heat sources, volcanoes, offshore) | [`01-quality.md`](docs/findings/01-quality.md) |
+| Harmonization | Factors per region, month and satellite pass, fitted on 2012-2021. Error of the yearly total on years left out: 2.1% (Argentina), 5.3% (Chile) | [`03-modis-vs-viirs.md`](docs/findings/03-modis-vs-viirs.md) |
+| Burn calendar | Hotspots per month against the median of the same month in the reference years, for any region, box or period, with CSV download | [`04-calendar.md`](docs/findings/04-calendar.md) |
+| Known fires | 12 of 12 case months rank in the top 4 of 26 years for their area, including two MODIS-era fires | [`06-case-studies.md`](docs/findings/06-case-studies.md) |
+| Next-day outlook | Tested on 2023-2025, never seen in training: 78.0% (Argentina) and 79.1% (Chile) of the cell-days with a hotspot are caught. With the same number of alerts as the rule "fire today in the cell or a neighbour": 79% against 64%, and 68% against 49% | [`09-daily-model.md`](docs/findings/09-daily-model.md) |
+| Fire zones | On 2023-2025, 83.3% of next-day hotspots fell inside the 80% zone of their fire | [`10-fire-zones.md`](docs/findings/10-fire-zones.md) |
+| Software | FastAPI and DuckDB API; React, MapLibre and deck.gl map; 149 automated tests | [`tests/`](tests) |
+
+## What it is not
+
+A hotspot is a thermal detection in a pixel: not a fire, not burned area, not damage. No detection
+does not mean no fire. Values before 2012 are estimates from MODIS. The outlook says where fire
+activity is most likely, not where a fire will start, and most alerts end with no hotspot. Weather is
+not in the model yet.
+
+## Data and credits
+
+NASA FIRMS (MODIS Collection 6.1 on Terra and Aqua; VIIRS 375 m on Suomi-NPP, NOAA-20 and NOAA-21),
+NASA GIBS imagery, Open-Meteo (wind), WorldPop R2025A, geoBoundaries, Instituto Geográfico Nacional
+de Argentina, GeoNames, CARTO and OpenStreetMap contributors, Esri World Imagery, and AWS Terrain
+Tiles (Mapzen).
+
+## Use of AI
+
+We used Claude (Anthropic) as an assistant for coding, debugging and editing the English text. The
+method, the data choices and every number were checked by the team against the data. Commits made with
+it carry a "Co-Authored-By" line.
+
+---
+
+# Developer guide
 
 ## Getting the data
 
